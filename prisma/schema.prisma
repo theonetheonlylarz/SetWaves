@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String   @id @default(uuid())
+  email                 String   @unique
+  password              String
+  slug                  String   @unique
+  displayName           String   @default("")
+  stripeAccountId       String?
+  stripeOnboarded       Boolean  @default(false)
+  resetToken            String?
+  resetTokenExpiry      DateTime?
+  createdAt             DateTime @default(now())
+  songs                 Song[]
+  queue                 QueueItem[]
+  tokens                TokenBalance[]
+}
+
+model Song {
+  id        String   @id @default(uuid())
+  title     String
+  artist    String   @default("")
+  active    Boolean  @default(true)
+  order     Int      @default(0)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model QueueItem {
+  id        String   @id @default(uuid())
+  songTitle String
+  requester String   @default("Anonymous")
+  tier      String   @default("STANDARD")
+  tokens    Int      @default(1)
+  played    Boolean  @default(false)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model TokenBalance {
+  id       String @id @default(uuid())
+  fanId    String
+  userId   String
+  balance  Int    @default(0)
+  user     User   @relation(fields: [userId], references: [id])
+}
+
+model TokenPackage {
+  id       String @id @default(uuid())
+  name     String
+  tokens   Int
+  price    Int
+  active   Boolean @default(true)
+}

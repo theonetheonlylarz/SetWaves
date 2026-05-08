@@ -8,19 +8,18 @@ datasource db {
 }
 
 model User {
-  id                    String   @id @default(uuid())
-  email                 String   @unique
-  password              String
-  slug                  String   @unique
-  displayName           String   @default("")
-  stripeAccountId       String?
-  stripeOnboarded       Boolean  @default(false)
-  resetToken            String?
-  resetTokenExpiry      DateTime?
-  createdAt             DateTime @default(now())
-  songs                 Song[]
-  queue                 QueueItem[]
-  tokens                TokenBalance[]
+  id               String      @id @default(uuid())
+  email            String      @unique
+  password         String
+  slug             String      @unique
+  displayName      String      @default("")
+  stripeAccountId  String?
+  stripeOnboarded  Boolean     @default(false)
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime    @default(now())
+  songs            Song[]
+  queue            QueueItem[]
 }
 
 model Song {
@@ -29,6 +28,18 @@ model Song {
   artist    String   @default("")
   active    Boolean  @default(true)
   order     Int      @default(0)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model QueueItem {
+  id        String   @id @default(uuid())
+  songTitle String
+  requester String   @default("Anonymous")
+  tier      String   @default("STANDARD")
+  tokens    Int      @default(1)
+  played    Boolean  @default(false)
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())

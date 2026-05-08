@@ -19,7 +19,7 @@ export default function Dashboard() {
   const fetchData = async () => {
     try {
       const res = await fetch(API + '/show/dashboard/me', { headers })
-      if (res.status === 401) { localStorage.clear(); navigate('/login'); return; }
+      if (res.status === 401) { localStorage.clear(); navigate('/login'); return }
       const d = await res.json()
       setData(d); setDisplayName(d.displayName)
     } catch (e) { setError(e.message) }
@@ -68,25 +68,35 @@ export default function Dashboard() {
     setEditingName(false); fetchData()
   }
 
-  if (!data) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ color: '#94a3b8' }}>Loading...</p></div>
+  if (!data) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
+      <p style={{ color: 'var(--muted)' }}>Loading...</p>
+    </div>
+  )
 
   return (
-    <div style={{ minHeight: '100vh', padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#7c3aed' }}>SetWaves</h1>
-          <p style={{ color: '#94a3b8', fontSize: '13px' }}>Dashboard — {data.displayName}</p>
+          <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--neon)' }}>🎵 SetWaves</h1>
+          <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Dashboard — {data.displayName}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <a href={'/show/' + data.slug} target="_blank" style={{ fontSize: '13px', color: '#7c3aed' }}>View Show</a>
+          <a href={'/show/' + data.slug} target="_blank" style={{ fontSize: '13px', color: 'var(--neon)' }}>View Show</a>
           <button onClick={logout} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>Logout</button>
         </div>
       </div>
+
       {error && <p className="error" style={{ marginBottom: '16px' }}>{error}</p>}
+
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        {['queue','songs','qr','settings'].map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ background: tab === t ? '#7c3aed' : '#2d2d3d', color: 'white', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', textTransform: 'capitalize', fontWeight: 600 }}>
+        {['queue', 'songs', 'qr', 'settings'].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            background: tab === t ? 'var(--neon)' : 'var(--border)',
+            color: tab === t ? '#000' : 'var(--text)',
+            padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+            textTransform: 'capitalize', fontWeight: 600
+          }}>
             {t}{t === 'queue' ? ' (' + data.queue.filter(i => !i.played).length + ')' : ''}
           </button>
         ))}
@@ -94,12 +104,14 @@ export default function Dashboard() {
 
       {tab === 'queue' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {data.queue.filter(i => !i.played).length === 0 && <p style={{ color: '#94a3b8', textAlign: 'center', padding: '40px' }}>No requests yet. Share your show link!</p>}
+          {data.queue.filter(i => !i.played).length === 0 && (
+            <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px' }}>No requests yet. Share your show link!</p>
+          )}
           {data.queue.filter(i => !i.played).map(item => (
             <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <p style={{ fontWeight: 600 }}>{item.songTitle}</p>
-                <p style={{ color: '#94a3b8', fontSize: '13px' }}>from {item.requester} · {item.tokens} token{item.tokens !== 1 ? 's' : ''}</p>
+                <p style={{ color: 'var(--muted)', fontSize: '13px' }}>from {item.requester} · {item.tokens} token{item.tokens !== 1 ? 's' : ''}</p>
               </div>
               <button onClick={() => markPlayed(item.id)} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>Done</button>
             </div>
@@ -119,7 +131,7 @@ export default function Dashboard() {
               <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: song.active ? 1 : 0.5 }}>
                 <div>
                   <p style={{ fontWeight: 600 }}>{song.title}</p>
-                  {song.artist && <p style={{ color: '#94a3b8', fontSize: '13px' }}>{song.artist}</p>}
+                  {song.artist && <p style={{ color: 'var(--muted)', fontSize: '13px' }}>{song.artist}</p>}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '4px 10px' }}>{song.active ? 'Hide' : 'Show'}</button>
@@ -131,11 +143,17 @@ export default function Dashboard() {
         </div>
       )}
 
-      {tab === 'qr' && qr && (
+      {tab === 'qr' && (
         <div className="card" style={{ textAlign: 'center' }}>
-          <p style={{ marginBottom: '16px', color: '#94a3b8' }}>Share this QR code at your show</p>
-          <img src={qr.qr} alt="QR Code" style={{ maxWidth: '280px', borderRadius: '12px' }} />
-          <p style={{ marginTop: '16px', fontSize: '13px', color: '#94a3b8' }}>{qr.url}</p>
+          {qr ? (
+            <>
+              <p style={{ marginBottom: '16px', color: 'var(--muted)' }}>Share this QR code at your show</p>
+              <img src={qr.qr} alt="QR Code" style={{ maxWidth: '280px', borderRadius: '12px' }} />
+              <p style={{ marginTop: '16px', fontSize: '13px', color: 'var(--muted)' }}>{qr.url}</p>
+            </>
+          ) : (
+            <p style={{ color: 'var(--muted)' }}>Loading QR code...</p>
+          )}
         </div>
       )}
 
@@ -146,7 +164,7 @@ export default function Dashboard() {
             <input value={displayName} onChange={e => setDisplayName(e.target.value)} onFocus={() => setEditingName(true)} />
             {editingName && <button onClick={saveName} className="btn-primary">Save</button>}
           </div>
-          <p style={{ color: '#94a3b8', fontSize: '13px', marginTop: '24px' }}>Show URL: /show/{data.slug}</p>
+          <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '24px' }}>Show URL: /show/{data.slug}</p>
         </div>
       )}
     </div>

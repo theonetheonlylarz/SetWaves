@@ -28,7 +28,8 @@ export default function Auth({ initialTab = 'login' }) {
     if (tab === 'signup' && password !== confirm) return setError('Passwords do not match.')
     setLoading(true)
     try {
-      const res = await fetch('/auth/' + tab, {
+      const endpoint = tab === 'login' ? '/api/login' : '/api/register'
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, displayName })

@@ -1,8 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-const API = import.meta.env.VITE_API_URL || ''
-
 export default function ForgotPassword() {
   const [email, setEmail] = useState('')
   const [message, setMessage] = useState('')
@@ -15,16 +13,16 @@ export default function ForgotPassword() {
     if (!email || !email.includes('@')) return setError('Please enter a valid email address.')
     setLoading(true)
     try {
-      const res = await fetch(API + '/auth/forgot-password', {
+      const res = await fetch('/api/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setMessage(data.message)
+      setMessage(data.message || 'If that email exists, a reset link has been sent.')
     } catch (err) {
-      setError(err.message)
+      setError(err.message || 'Something went wrong. Please try again.')
     } finally {
       setLoading(false)
     }

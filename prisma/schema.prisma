@@ -8,18 +8,18 @@ datasource db {
 }
 
 model User {
-  id               String      @id @default(uuid())
-  email            String      @unique
-  password         String
-  slug             String      @unique
-  displayName      String      @default("")
-  stripeAccountId  String?
-  stripeOnboarded  Boolean     @default(false)
-  resetToken       String?
-  resetTokenExpiry DateTime?
-  createdAt        DateTime    @default(now())
-  songs            Song[]
-  queue            QueueItem[]
+  id                String    @id @default(uuid())
+  email             String    @unique
+  password          String
+  slug              String    @unique
+  displayName       String    @default("")
+  stripeAccountId   String?
+  stripeOnboarded   Boolean   @default(false)
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime  @default(now())
+  songs             Song[]
+  queue             QueueItem[]
 }
 
 model Song {
@@ -43,4 +43,12 @@ model QueueItem {
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
+}
+
+model TokenPackage {
+  id     String  @id @default(uuid())
+  name   String
+  tokens Int
+  price  Int
+  active Boolean @default(true)
 }

@@ -27,7 +27,6 @@ app.use(express.json());
 
 // WebSocket clients map: userId -> Set of ws connections
 const wsClients = {};
-
 function broadcast(userId, msg) {
   if (wsClients[userId]) {
     wsClients[userId].forEach(ws => {
@@ -49,8 +48,7 @@ function auth(req, res, next) {
   }
 }
 
-// ââ AUTH âââââââââââââââââââââââââââââââââââââââââââââ
-
+// ── AUTH ────────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
   const { email, password, displayName } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -80,6 +78,13 @@ app.post('/api/login', async (req, res) => {
   res.json({ token, user: { id: user.id, email: user.email, slug: user.slug, displayName: user.displayName, stripeOnboarded: user.stripeOnboarded } });
 });
 
+app.post('/api/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email required' });
+  // Always respond with success to avoid exposing whether an email is registered
+  res.json({ message: 'If that email is registered, a password reset link has been sent.' });
+});
+
 app.get('/api/profile', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.userId } });
   if (!user) return res.status(404).json({ error: 'Not found' });
@@ -92,8 +97,7 @@ app.put('/api/profile', auth, async (req, res) => {
   res.json({ id: user.id, email: user.email, slug: user.slug, displayName: user.displayName });
 });
 
-// ââ SONGS âââââââââââââââââââââââââââââââââââââââââââââ
-
+// ── SONGS ────────────────────────────────────────────────────
 app.get('/api/songs', auth, async (req, res) => {
   const songs = await prisma.song.findMany({ where: { userId: req.userId }, orderBy: { order: 'asc' } });
   res.json(songs);
@@ -103,9 +107,7 @@ app.post('/api/songs', auth, async (req, res) => {
   const { title, artist } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
   const count = await prisma.song.count({ where: { userId: req.userId } });
-  const song = await prisma.song.create({
-    data: { title, artist: artist || '', userId: req.userId, order: count }
-  });
+  const song = await prisma.song.create({ data: { title, artist: artist || '', userId: req.userId, order: count } });
   res.json(song);
 });
 
@@ -123,8 +125,7 @@ app.patch('/api/songs/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
-// ââ QUEUE âââââââââââââââââââââââââââââââââââââââââââââ
-
+// ── QUEUE ────────────────────────────────────────────────────
 app.get('/api/queue', auth, async (req, res) => {
   const queue = await prisma.queueItem.findMany({
     where: { userId: req.userId, played: false },
@@ -145,8 +146,7 @@ app.delete('/api/queue/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
-// ââ PUBLIC SHOW ââââââââââââââââââââââââââââââââââââââââ
-
+// ── PUBLIC SHOW ───────────────────────────────────────────────
 app.get('/api/show/:slug', async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { slug: req.params.slug },
@@ -169,8 +169,7 @@ app.post('/api/queue/:slug', async (req, res) => {
   res.json(item);
 });
 
-// ââ QR CODE ââââââââââââââââââââââââââââââââââââââââââââ
-
+// ── QR CODE ───────────────────────────────────────────────────
 app.get('/api/qrcode', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.userId } });
   const url = `${CLIENT_URL}/show/${user.slug}`;
@@ -178,8 +177,7 @@ app.get('/api/qrcode', auth, async (req, res) => {
   res.json({ qrCode, url });
 });
 
-// ââ STRIPE âââââââââââââââââââââââââââââââââââââââââââââ
-
+// ── STRIPE ────────────────────────────────────────────────────
 app.post('/api/stripe/connect', auth, async (req, res) => {
   if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
   try {
@@ -197,7 +195,6 @@ app.post('/api/stripe/connect', auth, async (req, res) => {
   }
 });
 
-// Stripe checkout for token purchase (fan)
 app.post('/api/stripe/checkout/:slug', async (req, res) => {
   if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
   const { packageId, fanId } = req.body;
@@ -219,8 +216,7 @@ app.post('/api/stripe/checkout/:slug', async (req, res) => {
   }
 });
 
-// ââ WEBSOCKET âââââââââââââââââââââââââââââââââââââââââ
-
+// ── WEBSOCKET ──────────────────────────────────────────────────
 app.ws('/ws/:userId', (ws, req) => {
   const { userId } = req.params;
   if (!wsClients[userId]) wsClients[userId] = new Set();
@@ -234,8 +230,7 @@ app.ws('/ws/:userId', (ws, req) => {
   });
 });
 
-// ââ STATIC FILES âââââââââââââââââââââââââââââââââââââââ
-
+// ── STATIC FILES ───────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api') && !req.path.startsWith('/ws')) {
@@ -243,10 +238,8 @@ app.get('*', (req, res) => {
   }
 });
 
-// ââ STARTUP ââââââââââââââââââââââââââââââââââââââââââââ
-
+// ── STARTUP ────────────────────────────────────────────────────
 async function main() {
-  // Sync DB schema
   await new Promise(resolve => {
     exec('npx prisma db push --accept-data-loss', (err, stdout, stderr) => {
       if (err) console.error('prisma db push error:', err.message);
@@ -255,7 +248,6 @@ async function main() {
     });
   });
 
-  // Seed default token packages if none exist
   try {
     const count = await prisma.tokenPackage.count();
     if (count === 0) {

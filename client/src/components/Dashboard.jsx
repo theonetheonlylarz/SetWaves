@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-const API = import.meta.env.VITE_API_URL || ''
-
 export default function Dashboard() {
-  const [data, setData] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [queue, setQueue] = useState([])
+  const [songs, setSongs] = useState([])
   const [tab, setTab] = useState('queue')
   const [newSong, setNewSong] = useState({ title: '', artist: '' })
   const [qr, setQr] = useState(null)
@@ -16,98 +16,105 @@ export default function Dashboard() {
   const token = localStorage.getItem('token')
   const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
 
-  const fetchData = async () => {
+  const fetchAll = async () => {
     try {
-      const res = await fetch(API + '/show/dashboard/me', { headers })
-      if (res.status === 401) { localStorage.clear(); navigate('/login'); return }
-      const d = await res.json()
-      setData(d); setDisplayName(d.displayName)
-    } catch (e) { setError(e.message) }
+      const [profileRes, queueRes, songsRes] = await Promise.all([
+        fetch('/api/profile', { headers }),
+        fetch('/api/queue', { headers }),
+        fetch('/api/songs', { headers })
+      ])
+      if (profileRes.status === 401) { localStorage.clear(); navigate('/login'); return }
+      const profileData = await profileRes.json()
+      const queueData = await queueRes.json()
+      const songsData = await songsRes.json()
+      setProfile(profileData)
+      setDisplayName(profileData.displayName)
+      setQueue(Array.isArray(queueData) ? queueData : [])
+      setSongs(Array.isArray(songsData) ? songsData : [])
+    } catch (e) {
+      setError(e.message)
+    }
   }
 
   useEffect(() => {
-    fetchData()
-    fetch(API + '/show/dashboard/qr', { headers }).then(r => r.json()).then(d => setQr(d))
+    fetchAll()
+    fetch('/api/qrcode', { headers }).then(r => r.json()).then(d => setQr(d))
   }, [])
 
   useEffect(() => {
-    if (!data?.slug) return
-    const wsBase = (API || window.location.origin).replace(/^http/, 'ws')
-    wsRef.current = new WebSocket(wsBase + '/ws/' + data.slug)
-    wsRef.current.onmessage = () => fetchData()
+    if (!profile?.id) return
+    const wsBase = window.location.origin.replace(/^http/, 'ws')
+    wsRef.current = new WebSocket(wsBase + '/ws/' + profile.id)
+    wsRef.current.onmessage = () => fetchAll()
     return () => wsRef.current?.close()
-  }, [data?.slug])
+  }, [profile?.id])
 
   const logout = () => { localStorage.clear(); navigate('/login') }
 
   const markPlayed = async (id) => {
-    await fetch(API + '/show/dashboard/queue/' + id, { method: 'PATCH', headers })
-    fetchData()
+    await fetch('/api/queue/' + id + '/played', { method: 'PUT', headers })
+    fetchAll()
   }
 
   const addSong = async (e) => {
     e.preventDefault()
     if (!newSong.title) return
-    await fetch(API + '/show/dashboard/songs', { method: 'POST', headers, body: JSON.stringify(newSong) })
-    setNewSong({ title: '', artist: '' }); fetchData()
+    await fetch('/api/songs', { method: 'POST', headers, body: JSON.stringify(newSong) })
+    setNewSong({ title: '', artist: '' })
+    fetchAll()
   }
 
   const toggleSong = async (song) => {
-    await fetch(API + '/show/dashboard/songs/' + song.id, { method: 'PATCH', headers, body: JSON.stringify({ active: !song.active }) })
-    fetchData()
+    await fetch('/api/songs/' + song.id, { method: 'PATCH', headers, body: JSON.stringify({ active: !song.active }) })
+    fetchAll()
   }
 
   const deleteSong = async (id) => {
     if (!confirm('Delete this song?')) return
-    await fetch(API + '/show/dashboard/songs/' + id, { method: 'DELETE', headers })
-    fetchData()
+    await fetch('/api/songs/' + id, { method: 'DELETE', headers })
+    fetchAll()
   }
 
   const saveName = async () => {
-    await fetch(API + '/show/dashboard/settings', { method: 'PATCH', headers, body: JSON.stringify({ displayName }) })
-    setEditingName(false); fetchData()
+    await fetch('/api/profile', { method: 'PUT', headers, body: JSON.stringify({ displayName }) })
+    setEditingName(false)
+    fetchAll()
   }
 
-  if (!data) return (
+  if (!profile) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
       <p style={{ color: 'var(--muted)' }}>Loading...</p>
     </div>
   )
+
+  const activeQueue = queue.filter(i => !i.played)
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--neon)' }}>🎵 SetWaves</h1>
-          <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Dashboard — {data.displayName}</p>
+          <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Dashboard — {profile.displayName}</p>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <a href={'/show/' + data.slug} target="_blank" style={{ fontSize: '13px', color: 'var(--neon)' }}>View Show</a>
+          <a href={'/show/' + profile.slug} target="_blank" style={{ fontSize: '13px', color: 'var(--neon)' }}>View Show</a>
           <button onClick={logout} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>Logout</button>
         </div>
       </div>
-
       {error && <p className="error" style={{ marginBottom: '16px' }}>{error}</p>}
-
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
         {['queue', 'songs', 'qr', 'settings'].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            background: tab === t ? 'var(--neon)' : 'var(--border)',
-            color: tab === t ? '#000' : 'var(--text)',
-            padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-            textTransform: 'capitalize', fontWeight: 600
-          }}>
-            {t}{t === 'queue' ? ' (' + data.queue.filter(i => !i.played).length + ')' : ''}
+          <button key={t} onClick={() => setTab(t)} style={{ background: tab === t ? 'var(--neon)' : 'var(--border)', color: tab === t ? '#000' : 'var(--text)', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', textTransform: 'capitalize', fontWeight: 600 }}>
+            {t}{t === 'queue' ? ' (' + activeQueue.length + ')' : ''}
           </button>
         ))}
       </div>
-
       {tab === 'queue' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {data.queue.filter(i => !i.played).length === 0 && (
+          {activeQueue.length === 0 && (
             <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px' }}>No requests yet. Share your show link!</p>
           )}
-          {data.queue.filter(i => !i.played).map(item => (
+          {activeQueue.map(item => (
             <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <p style={{ fontWeight: 600 }}>{item.songTitle}</p>
@@ -118,7 +125,6 @@ export default function Dashboard() {
           ))}
         </div>
       )}
-
       {tab === 'songs' && (
         <div>
           <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -127,7 +133,7 @@ export default function Dashboard() {
             <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap' }}>+ Add Song</button>
           </form>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {data.songs.map(song => (
+            {songs.map(song => (
               <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: song.active ? 1 : 0.5 }}>
                 <div>
                   <p style={{ fontWeight: 600 }}>{song.title}</p>
@@ -142,13 +148,12 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
       {tab === 'qr' && (
         <div className="card" style={{ textAlign: 'center' }}>
           {qr ? (
             <>
               <p style={{ marginBottom: '16px', color: 'var(--muted)' }}>Share this QR code at your show</p>
-              <img src={qr.qr} alt="QR Code" style={{ maxWidth: '280px', borderRadius: '12px' }} />
+              <img src={qr.qrCode} alt="QR Code" style={{ maxWidth: '280px', borderRadius: '12px' }} />
               <p style={{ marginTop: '16px', fontSize: '13px', color: 'var(--muted)' }}>{qr.url}</p>
             </>
           ) : (
@@ -156,7 +161,6 @@ export default function Dashboard() {
           )}
         </div>
       )}
-
       {tab === 'settings' && (
         <div className="card">
           <h3 style={{ marginBottom: '16px', fontWeight: 600 }}>Display Name</h3>
@@ -164,7 +168,7 @@ export default function Dashboard() {
             <input value={displayName} onChange={e => setDisplayName(e.target.value)} onFocus={() => setEditingName(true)} />
             {editingName && <button onClick={saveName} className="btn-primary">Save</button>}
           </div>
-          <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '24px' }}>Show URL: /show/{data.slug}</p>
+          <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '24px' }}>Show URL: /show/{profile.slug}</p>
         </div>
       )}
     </div>

@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
-const API = import.meta.env.VITE_API_URL || ''
-
 export default function ShowPage() {
   const { slug } = useParams()
   const [params] = useSearchParams()
   const [show, setShow] = useState(null)
-  const [packages, setPackages] = useState([])
   const [tokens, setTokens] = useState(parseInt(params.get('tokens') || '0'))
   const [requester, setRequester] = useState('')
   const [selectedSong, setSelectedSong] = useState('')
@@ -18,28 +15,27 @@ export default function ShowPage() {
   const wsRef = useRef(null)
 
   const fetchShow = async () => {
-    const res = await fetch(API + '/show/' + slug)
+    const res = await fetch('/api/show/' + slug)
     if (res.ok) setShow(await res.json())
   }
 
   useEffect(() => {
     fetchShow()
-    fetch(API + '/tokens/packages').then(r => r.json()).then(setPackages)
   }, [slug])
 
   useEffect(() => {
     if (!slug) return
-    const wsBase = (API || window.location.origin).replace(/^http/, 'ws')
+    const wsBase = window.location.origin.replace(/^http/, 'ws')
     wsRef.current = new WebSocket(wsBase + '/ws/' + slug)
     wsRef.current.onmessage = () => fetchShow()
     return () => wsRef.current?.close()
   }, [slug])
 
   const buyTokens = async (pkg) => {
-    const res = await fetch(API + '/tokens/session', {
+    const res = await fetch('/api/stripe/checkout/' + slug, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ packageId: pkg.id, showSlug: slug })
+      body: JSON.stringify({ packageId: pkg.id })
     })
     const data = await res.json()
     if (data.url) window.location.href = data.url
@@ -53,10 +49,10 @@ export default function ShowPage() {
     if (!title) return setError('Please select or enter a song')
     setSubmitting(true); setError('')
     try {
-      const res = await fetch(API + '/show/' + slug + '/request', {
+      const res = await fetch('/api/queue/' + slug, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ songTitle: title, requester: requester || 'Anonymous', tokens: 1 })
+        body: JSON.stringify({ songTitle: title, requester: requester || 'Anonymous' })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -74,6 +70,8 @@ export default function ShowPage() {
       <p style={{ color: 'var(--muted)' }}>Loading...</p>
     </div>
   )
+
+  const packages = show.packages || []
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
@@ -97,7 +95,7 @@ export default function ShowPage() {
           <h3 style={{ marginBottom: '16px', fontWeight: 600 }}>Request a Song</h3>
           <form onSubmit={requestSong} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <input placeholder="Your name (optional)" value={requester} onChange={e => setRequester(e.target.value)} />
-            {show.songs.length > 0 && (
+            {show.songs && show.songs.length > 0 && (
               <select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}>
                 <option value="">Pick from setlist...</option>
                 {show.songs.map(s => (
@@ -121,41 +119,13 @@ export default function ShowPage() {
         <h3 style={{ marginBottom: '16px', fontWeight: 600 }}>Get Tokens</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {packages.map(pkg => (
-            <button key={pkg.id} onClick={() => buyTokens(pkg)} style={{
-              background: 'var(--surface)',
-              border: '1px solid var(--neon)',
-              borderRadius: '10px',
-              padding: '14px 16px',
-              cursor: 'pointer',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              color: 'var(--text)'
-            }}>
+            <button key={pkg.id} onClick={() => buyTokens(pkg)} style={{ background: 'var(--surface)', border: '1px solid var(--neon)', borderRadius: '10px', padding: '14px 16px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text)' }}>
               <span style={{ fontWeight: 600 }}>{pkg.name} — {pkg.tokens} tokens</span>
               <span style={{ color: 'var(--neon)', fontWeight: 700 }}>${(pkg.price / 100).toFixed(2)}</span>
             </button>
           ))}
         </div>
       </div>
-
-      {show.queue.length > 0 && (
-        <div style={{ marginTop: '32px' }}>
-          <h3 style={{ marginBottom: '12px', fontWeight: 600, color: 'var(--muted)' }}>Up Next</h3>
-          {show.queue.map(item => (
-            <div key={item.id} style={{
-              padding: '10px 14px',
-              borderLeft: '3px solid var(--neon)',
-              marginBottom: '8px',
-              background: 'var(--surface)',
-              borderRadius: '0 8px 8px 0'
-            }}>
-              <p style={{ fontWeight: 600 }}>{item.songTitle}</p>
-              <p style={{ fontSize: '12px', color: 'var(--muted)' }}>requested by {item.requester}</p>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

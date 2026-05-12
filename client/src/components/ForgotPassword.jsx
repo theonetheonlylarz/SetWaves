@@ -29,30 +29,61 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: '20px' }}>
-      <div className="card" style={{ width: '100%', maxWidth: '400px' }}>
-        <h1 style={{ color: 'var(--neon)', fontSize: 28, marginBottom: 8, textAlign: 'center', fontWeight: 800 }}>🎵 SetWaves</h1>
-        <h2 style={{ marginBottom: '8px', fontWeight: 700, textAlign: 'center', fontSize: 18 }}>Forgot Password</h2>
-        <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '24px', textAlign: 'center' }}>
-          Enter your email and we'll send you a reset link.
-        </p>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <input
-            placeholder="Email address"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            autoComplete="email"
-            inputMode="email"
-          />
-          {error && <p className="error">{error}</p>}
-          {message && <p className="success">{message}</p>}
-          <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? 'Sending...' : 'Send Reset Link'}
-          </button>
-        </form>
-        <p style={{ textAlign: 'center', marginTop: '16px', fontSize: '13px', color: 'var(--muted)' }}>
-          <Link to="/login">Back to login</Link>
-        </p>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '20px',
+      background: 'radial-gradient(ellipse 90% 60% at 50% -10%, rgba(0,255,136,0.07) 0%, transparent 65%)',
+    }}>
+      <div style={{ width: '100%', maxWidth: '420px' }}>
+
+        <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+            <div className="logo-mark">🎵</div>
+            <span className="logo-text" style={{ fontSize: '26px' }}>Next Up</span>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '32px' }}>
+          <h2 style={{ fontWeight: 800, fontSize: '20px', marginBottom: '8px' }}>Reset Password</h2>
+          <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '24px', lineHeight: '1.5' }}>
+            Enter your email and we'll send you a reset link.
+          </p>
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                Email
+              </label>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+
+            {error && <div className="error">{error}</div>}
+            {message && <div className="success">{message}</div>}
+
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={loading}
+              style={{ padding: '13px', fontSize: '15px', borderRadius: '10px' }}
+            >
+              {loading ? 'Sending...' : 'Send Reset Link'}
+            </button>
+          </form>
+
+          <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '13px' }}>
+            <Link to="/login" style={{ color: 'var(--muted)' }}>← Back to sign in</Link>
+          </p>
+        </div>
       </div>
     </div>
   )

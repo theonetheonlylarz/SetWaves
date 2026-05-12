@@ -22,6 +22,45 @@ if (process.env.STRIPE_SECRET_KEY) {
   stripeInstance = Stripe(process.env.STRIPE_SECRET_KEY);
 }
 
+// ── STRIPE WEBHOOK ─────────────────────────────────────────────────────────────
+// IMPORTANT: Must be registered BEFORE express.json() — Stripe requires raw body
+// for webhook signature verification.
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.warn('STRIPE_WEBHOOK_SECRET not set — rejecting webhook');
+    return res.status(400).send('Webhook secret not configured');
+  }
+  let event;
+  try {
+    event = stripeInstance.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const { slug, tokens } = session.metadata || {};
+    if (slug && tokens) {
+      try {
+        await prisma.tokenGrant.upsert({
+          where: { stripeSessionId: session.id },
+          update: {},
+          create: { stripeSessionId: session.id, tokens: parseInt(tokens, 10), slug },
+        });
+        console.log(`Token grant created: ${tokens} tokens for show ${slug}`);
+      } catch (e) {
+        console.error('Failed to create token grant:', e.message);
+      }
+    }
+  }
+
+  res.json({ received: true });
+});
+
 app.use(cors());
 app.use(express.json());
 
@@ -48,7 +87,7 @@ function auth(req, res, next) {
   }
 }
 
-// ── AUTH ────────────────────────────────────────────────────
+// ── AUTH ─────────────────────────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
   const { email, password, displayName } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -81,7 +120,6 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/forgot-password', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email required' });
-  // Always respond with success to avoid exposing whether an email is registered
   res.json({ message: 'If that email is registered, a password reset link has been sent.' });
 });
 
@@ -97,7 +135,7 @@ app.put('/api/profile', auth, async (req, res) => {
   res.json({ id: user.id, email: user.email, slug: user.slug, displayName: user.displayName });
 });
 
-// ── SONGS ────────────────────────────────────────────────────
+// ── SONGS ─────────────────────────────────────────────────────────────────────
 app.get('/api/songs', auth, async (req, res) => {
   const songs = await prisma.song.findMany({ where: { userId: req.userId }, orderBy: { order: 'asc' } });
   res.json(songs);
@@ -125,7 +163,7 @@ app.patch('/api/songs/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
-// ── QUEUE ────────────────────────────────────────────────────
+// ── QUEUE ─────────────────────────────────────────────────────────────────────
 app.get('/api/queue', auth, async (req, res) => {
   const queue = await prisma.queueItem.findMany({
     where: { userId: req.userId, played: false },
@@ -146,7 +184,7 @@ app.delete('/api/queue/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
-// ── PUBLIC SHOW ───────────────────────────────────────────────
+// ── PUBLIC SHOW ───────────────────────────────────────────────────────────────
 app.get('/api/show/:slug', async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { slug: req.params.slug },
@@ -169,7 +207,7 @@ app.post('/api/queue/:slug', async (req, res) => {
   res.json(item);
 });
 
-// ── QR CODE ───────────────────────────────────────────────────
+// ── QR CODE ───────────────────────────────────────────────────────────────────
 app.get('/api/qrcode', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.userId } });
   const url = `${CLIENT_URL}/show/${user.slug}`;
@@ -177,7 +215,7 @@ app.get('/api/qrcode', auth, async (req, res) => {
   res.json({ qrCode, url });
 });
 
-// ── STRIPE ────────────────────────────────────────────────────
+// ── STRIPE ────────────────────────────────────────────────────────────────────
 app.post('/api/stripe/connect', auth, async (req, res) => {
   if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
   try {
@@ -197,26 +235,63 @@ app.post('/api/stripe/connect', auth, async (req, res) => {
 
 app.post('/api/stripe/checkout/:slug', async (req, res) => {
   if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
-  const { packageId, fanId } = req.body;
+  const { packageId } = req.body;
   const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
   if (!user) return res.status(404).json({ error: 'Not found' });
   const pkg = await prisma.tokenPackage.findUnique({ where: { id: packageId } });
   if (!pkg) return res.status(404).json({ error: 'Package not found' });
   try {
-    const session = await stripeInstance.checkout.sessions.create({
+    const sessionParams = {
       payment_method_types: ['card'],
-      line_items: [{ price_data: { currency: 'usd', product_data: { name: `${pkg.tokens} tokens` }, unit_amount: pkg.price }, quantity: 1 }],
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          product_data: { name: `${pkg.name} — ${pkg.tokens} song request${pkg.tokens !== 1 ? 's' : ''}` },
+          unit_amount: pkg.price,
+        },
+        quantity: 1,
+      }],
       mode: 'payment',
-      success_url: `${CLIENT_URL}/show/${user.slug}?tokens=${pkg.tokens}&fanId=${fanId}`,
-      cancel_url: `${CLIENT_URL}/show/${user.slug}`
-    });
+      // slug + tokens stored in metadata so the webhook can create the TokenGrant
+      metadata: { slug: user.slug, tokens: String(pkg.tokens) },
+      // Stripe replaces {CHECKOUT_SESSION_ID} with the real session ID — used for secure token redemption
+      success_url: `${CLIENT_URL}/show/${user.slug}?grant={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${CLIENT_URL}/show/${user.slug}`,
+    };
+
+    // 90/10 split — only applied once the performer has completed Stripe Connect onboarding
+    if (user.stripeOnboarded && user.stripeAccountId) {
+      sessionParams.application_fee_amount = Math.floor(pkg.price * 0.10); // 10% platform fee
+      sessionParams.transfer_data = { destination: user.stripeAccountId };  // 90% to performer
+    }
+
+    const session = await stripeInstance.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// ── WEBSOCKET ──────────────────────────────────────────────────
+// Securely redeem tokens after a verified Stripe payment
+// The session ID comes from the ?grant= URL param set by Stripe's success_url template
+app.get('/api/tokens/redeem/:sessionId', async (req, res) => {
+  try {
+    const grant = await prisma.tokenGrant.findUnique({ where: { stripeSessionId: req.params.sessionId } });
+    if (!grant) {
+      // Webhook may still be in flight — client should retry
+      return res.status(404).json({ error: 'Grant not found — payment is still processing, try again in a moment.' });
+    }
+    if (grant.redeemed) {
+      return res.status(409).json({ error: 'Already redeemed', tokens: grant.tokens });
+    }
+    await prisma.tokenGrant.update({ where: { id: grant.id }, data: { redeemed: true } });
+    res.json({ tokens: grant.tokens, slug: grant.slug });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── WEBSOCKET ──────────────────────────────────────────────────────────────────
 app.ws('/ws/:userId', (ws, req) => {
   const { userId } = req.params;
   if (!wsClients[userId]) wsClients[userId] = new Set();
@@ -230,7 +305,7 @@ app.ws('/ws/:userId', (ws, req) => {
   });
 });
 
-// ── STATIC FILES ───────────────────────────────────────────────
+// ── STATIC FILES ───────────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api') && !req.path.startsWith('/ws')) {
@@ -238,7 +313,7 @@ app.get('*', (req, res) => {
   }
 });
 
-// ── STARTUP ────────────────────────────────────────────────────
+// ── STARTUP ────────────────────────────────────────────────────────────────────
 async function main() {
   await new Promise(resolve => {
     exec('npx prisma db push --accept-data-loss', (err, stdout, stderr) => {
@@ -264,7 +339,7 @@ async function main() {
     console.error('Seed error:', e.message);
   }
 
-  app.listen(PORT, () => console.log(`SetWaves running on port ${PORT}`));
+  app.listen(PORT, () => console.log(`Next Up running on port ${PORT}`));
 }
 
 main().catch(console.error);

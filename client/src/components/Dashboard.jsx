@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+const Spinner = () => (
+  <div style={{ width: '32px', height: '32px', border: '3px solid var(--border)', borderTopColor: 'var(--neon)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
+)
+
 export default function Dashboard() {
   const [profile, setProfile] = useState(null)
   const [queue, setQueue] = useState([])
@@ -11,6 +15,7 @@ export default function Dashboard() {
   const [error, setError] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [editingName, setEditingName] = useState(false)
+  const [saving, setSaving] = useState(false)
   const navigate = useNavigate()
   const wsRef = useRef(null)
   const token = localStorage.getItem('token')
@@ -31,9 +36,7 @@ export default function Dashboard() {
       setDisplayName(profileData.displayName)
       setQueue(Array.isArray(queueData) ? queueData : [])
       setSongs(Array.isArray(songsData) ? songsData : [])
-    } catch (e) {
-      setError(e.message)
-    }
+    } catch (e) { setError(e.message) }
   }
 
   useEffect(() => {
@@ -58,7 +61,7 @@ export default function Dashboard() {
 
   const addSong = async (e) => {
     e.preventDefault()
-    if (!newSong.title) return
+    if (!newSong.title.trim()) return
     await fetch('/api/songs', { method: 'POST', headers, body: JSON.stringify(newSong) })
     setNewSong({ title: '', artist: '' })
     fetchAll()
@@ -76,101 +79,272 @@ export default function Dashboard() {
   }
 
   const saveName = async () => {
+    setSaving(true)
     await fetch('/api/profile', { method: 'PUT', headers, body: JSON.stringify({ displayName }) })
+    setSaving(false)
     setEditingName(false)
     fetchAll()
   }
 
   if (!profile) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
-      <p style={{ color: 'var(--muted)' }}>Loading...</p>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '14px', background: 'var(--bg)' }}>
+      <Spinner />
+      <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Loading...</p>
     </div>
   )
 
   const activeQueue = queue.filter(i => !i.played)
 
+  const TABS = [
+    { id: 'queue', label: 'Queue', badge: activeQueue.length },
+    { id: 'songs', label: 'Setlist' },
+    { id: 'qr', label: 'QR Code' },
+    { id: 'settings', label: 'Settings' },
+  ]
+
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)', padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 800, color: 'var(--neon)' }}>🎵 SetWaves</h1>
-          <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Dashboard — {profile.displayName}</p>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+      {/* Header */}
+      <header style={{
+        background: 'rgba(15,15,26,0.85)',
+        borderBottom: '1px solid var(--border)',
+        padding: '0 24px',
+        height: '56px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        position: 'sticky',
+        top: 0,
+        zIndex: 100,
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="logo-mark" style={{ width: '28px', height: '28px', fontSize: '13px', borderRadius: '6px' }}>🎵</div>
+          <div>
+            <div className="logo-text" style={{ fontSize: '16px', lineHeight: '1.2' }}>Next Up</div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', letterSpacing: '0.01em' }}>{profile.displayName}</div>
+          </div>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <a href={'/show/' + profile.slug} target="_blank" style={{ fontSize: '13px', color: 'var(--neon)' }}>View Show</a>
-          <button onClick={logout} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>Logout</button>
-        </div>
-      </div>
-      {error && <p className="error" style={{ marginBottom: '16px' }}>{error}</p>}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        {['queue', 'songs', 'qr', 'settings'].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{ background: tab === t ? 'var(--neon)' : 'var(--border)', color: tab === t ? '#000' : 'var(--text)', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', textTransform: 'capitalize', fontWeight: 600 }}>
-            {t}{t === 'queue' ? ' (' + activeQueue.length + ')' : ''}
+          <a
+            href={'/show/' + profile.slug}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              fontSize: '13px',
+              color: 'var(--neon)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '6px 12px',
+              background: 'var(--neon-dim)',
+              borderRadius: '7px',
+              fontWeight: 600,
+              border: '1px solid rgba(0,255,136,0.2)',
+              textDecoration: 'none',
+              transition: 'all 0.15s',
+            }}
+          >
+            View Show ↗
+          </a>
+          <button onClick={logout} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>
+            Sign out
           </button>
-        ))}
-      </div>
-      {tab === 'queue' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {activeQueue.length === 0 && (
-            <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px' }}>No requests yet. Share your show link!</p>
-          )}
-          {activeQueue.map(item => (
-            <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <p style={{ fontWeight: 600 }}>{item.songTitle}</p>
-                <p style={{ color: 'var(--muted)', fontSize: '13px' }}>from {item.requester} · {item.tokens} token{item.tokens !== 1 ? 's' : ''}</p>
-              </div>
-              <button onClick={() => markPlayed(item.id)} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>Done</button>
-            </div>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 20px' }}>
+        {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+
+        {/* Tab Bar */}
+        <div style={{
+          display: 'flex',
+          gap: '2px',
+          marginBottom: '24px',
+          background: 'var(--surface)',
+          padding: '3px',
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid var(--border)',
+        }}>
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                flex: 1,
+                padding: '8px 10px',
+                borderRadius: '9px',
+                background: tab === t.id ? 'var(--surface2)' : 'transparent',
+                color: tab === t.id ? 'var(--text)' : 'var(--muted)',
+                fontSize: '13px',
+                fontWeight: 600,
+                border: tab === t.id ? '1px solid var(--border)' : '1px solid transparent',
+                boxShadow: tab === t.id ? '0 1px 6px rgba(0,0,0,0.3)' : 'none',
+                transition: 'all 0.15s',
+                gap: '6px',
+              }}
+            >
+              {t.label}
+              {t.badge > 0 && (
+                <span style={{ background: 'var(--neon)', color: '#000', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px', marginLeft: '2px' }}>
+                  {t.badge}
+                </span>
+              )}
+            </button>
           ))}
         </div>
-      )}
-      {tab === 'songs' && (
-        <div>
-          <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
-            <input placeholder="Song title" value={newSong.title} onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))} style={{ flex: 2, minWidth: '150px' }} />
-            <input placeholder="Artist (optional)" value={newSong.artist} onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))} style={{ flex: 2, minWidth: '150px' }} />
-            <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap' }}>+ Add Song</button>
-          </form>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {songs.map(song => (
-              <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: song.active ? 1 : 0.5 }}>
-                <div>
-                  <p style={{ fontWeight: 600 }}>{song.title}</p>
-                  {song.artist && <p style={{ color: 'var(--muted)', fontSize: '13px' }}>{song.artist}</p>}
+
+        {/* Queue */}
+        {tab === 'queue' && (
+          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {activeQueue.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '64px 20px' }}>
+                <div style={{ fontSize: '52px', marginBottom: '16px' }}>🎤</div>
+                <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '17px', marginBottom: '8px' }}>Queue is empty</p>
+                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Share your show link so fans can request songs</p>
+                <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer"
+                  style={{ display: 'inline-block', marginTop: '20px', padding: '9px 18px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
+                  Open Fan Page ↗
+                </a>
+              </div>
+            ) : activeQueue.map((item, i) => (
+              <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderLeft: '3px solid var(--neon)', animation: `fadeUp 0.2s ease ${i * 0.04}s both` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: '38px', height: '38px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🎵</div>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: '15px' }}>{item.songTitle}</p>
+                    <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
+                      from <span style={{ color: 'var(--text-secondary)' }}>{item.requester}</span>
+                      <span style={{ marginLeft: '8px', color: 'var(--border-active)', fontSize: '11px', fontWeight: 600 }}>🎟 {item.tokens}</span>
+                    </p>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '4px 10px' }}>{song.active ? 'Hide' : 'Show'}</button>
-                  <button onClick={() => deleteSong(song.id)} style={{ background: '#7f1d1d', color: 'white', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', cursor: 'pointer' }}>Delete</button>
-                </div>
+                <button onClick={() => markPlayed(item.id)} className="btn-secondary" style={{ fontSize: '12px', padding: '6px 14px', flexShrink: 0 }}>
+                  ✓ Done
+                </button>
               </div>
             ))}
           </div>
-        </div>
-      )}
-      {tab === 'qr' && (
-        <div className="card" style={{ textAlign: 'center' }}>
-          {qr ? (
-            <>
-              <p style={{ marginBottom: '16px', color: 'var(--muted)' }}>Share this QR code at your show</p>
-              <img src={qr.qrCode} alt="QR Code" style={{ maxWidth: '280px', borderRadius: '12px' }} />
-              <p style={{ marginTop: '16px', fontSize: '13px', color: 'var(--muted)' }}>{qr.url}</p>
-            </>
-          ) : (
-            <p style={{ color: 'var(--muted)' }}>Loading QR code...</p>
-          )}
-        </div>
-      )}
-      {tab === 'settings' && (
-        <div className="card">
-          <h3 style={{ marginBottom: '16px', fontWeight: 600 }}>Display Name</h3>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input value={displayName} onChange={e => setDisplayName(e.target.value)} onFocus={() => setEditingName(true)} />
-            {editingName && <button onClick={saveName} className="btn-primary">Save</button>}
+        )}
+
+        {/* Songs / Setlist */}
+        {tab === 'songs' && (
+          <div className="fade-up">
+            <div className="card" style={{ marginBottom: '16px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '14px', fontWeight: 500 }}>
+                Add songs fans can request from your setlist
+              </p>
+              <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input
+                  placeholder="Song title"
+                  value={newSong.title}
+                  onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))}
+                  style={{ flex: '2 1 160px' }}
+                />
+                <input
+                  placeholder="Artist (optional)"
+                  value={newSong.artist}
+                  onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))}
+                  style={{ flex: '2 1 140px' }}
+                />
+                <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0, padding: '11px 18px' }}>
+                  + Add
+                </button>
+              </form>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {songs.length === 0 && (
+                <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px 0', fontSize: '14px' }}>No songs yet. Add your first one above.</p>
+              )}
+              {songs.map(song => (
+                <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s' }}>
+                  <div>
+                    <p style={{ fontWeight: 600, fontSize: '14px' }}>{song.title}</p>
+                    {song.artist && <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>{song.artist}</p>}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>
+                      {song.active ? 'Hide' : 'Show'}
+                    </button>
+                    <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '24px' }}>Show URL: /show/{profile.slug}</p>
-        </div>
-      )}
+        )}
+
+        {/* QR Code */}
+        {tab === 'qr' && (
+          <div className="fade-up">
+            <div className="card" style={{ textAlign: 'center', padding: '48px 32px' }}>
+              {qr ? (
+                <>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '15px', fontWeight: 500, marginBottom: '28px' }}>
+                    Display at your show — fans scan to request songs
+                  </p>
+                  <div style={{ display: 'inline-block', background: '#fff', padding: '16px', borderRadius: '16px', marginBottom: '24px', boxShadow: '0 0 40px rgba(0,255,136,0.1)' }}>
+                    <img src={qr.qrCode} alt="QR Code" style={{ width: '220px', height: '220px', display: 'block' }} />
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '20px', fontFamily: 'monospace', background: 'var(--surface2)', display: 'inline-block', padding: '6px 14px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                    {qr.url}
+                  </p>
+                  <div style={{ marginTop: '4px' }}>
+                    <a href={qr.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
+                      Open Fan Page ↗
+                    </a>
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <Spinner />
+                  <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Generating QR code...</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Settings */}
+        {tab === 'settings' && (
+          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="card">
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Display Name</h3>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '16px' }}>Shown to fans on your public show page</p>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  value={displayName}
+                  onChange={e => setDisplayName(e.target.value)}
+                  onFocus={() => setEditingName(true)}
+                  placeholder="Your stage name"
+                />
+                {editingName && (
+                  <button onClick={saveName} className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} disabled={saving}>
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="card">
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Your Show Link</h3>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '14px' }}>Share with fans or display alongside your QR code</p>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {window?.location?.origin}/show/{profile.slug}
+                </div>
+                <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer" style={{ flexShrink: 0, padding: '10px 14px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                  Open ↗
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }

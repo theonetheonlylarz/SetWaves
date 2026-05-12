@@ -7,14 +7,15 @@ const Spinner = () => (
 
 export default function ShowPage() {
   const { slug } = useParams()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const [show, setShow] = useState(null)
-  const [tokens, setTokens] = useState(parseInt(params.get('tokens') || '0'))
+  const [tokens, setTokens] = useState(0)
+  const [redeeming, setRedeeming] = useState(false)
   const [requester, setRequester] = useState('')
   const [selectedSong, setSelectedSong] = useState('')
   const [customSong, setCustomSong] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [success, setSuccess] = useState(params.get('success') === 'true')
+  const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const wsRef = useRef(null)
 
@@ -26,6 +27,55 @@ export default function ShowPage() {
   }
 
   useEffect(() => { fetchShow() }, [slug])
+
+  // Securely redeem tokens after Stripe checkout — ?grant=SESSION_ID
+  // The session ID is set by Stripe in success_url via {CHECKOUT_SESSION_ID} template
+  useEffect(() => {
+    const grantSessionId = params.get('grant')
+    if (!grantSessionId) return
+    setRedeeming(true)
+    let attempts = 0
+    const maxAttempts = 8
+
+    const tryRedeem = async () => {
+      try {
+        const res = await fetch(`/api/tokens/redeem/${grantSessionId}`)
+        const data = await res.json()
+        if (res.ok) {
+          setTokens(t => t + data.tokens)
+          setRedeeming(false)
+          // Clean grant param from URL without triggering navigation
+          const next = new URLSearchParams(params)
+          next.delete('grant')
+          setParams(next, { replace: true })
+        } else if (res.status === 409) {
+          // Already redeemed (page refresh) — silently ignore
+          setRedeeming(false)
+          const next = new URLSearchParams(params)
+          next.delete('grant')
+          setParams(next, { replace: true })
+        } else if (res.status === 404 && attempts < maxAttempts) {
+          // Webhook still in flight — retry with backoff
+          attempts++
+          setTimeout(tryRedeem, 1500)
+        } else {
+          setError('Token redemption failed. Your payment was received — contact the performer for help.')
+          setRedeeming(false)
+        }
+      } catch {
+        if (attempts < maxAttempts) {
+          attempts++
+          setTimeout(tryRedeem, 1500)
+        } else {
+          setError('Could not connect to redeem tokens. Check your connection.')
+          setRedeeming(false)
+        }
+      }
+    }
+
+    tryRedeem()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!slug) return
@@ -111,13 +161,18 @@ export default function ShowPage() {
           color: tokens > 0 ? 'var(--neon)' : 'var(--muted)',
           transition: 'all 0.3s ease',
         }}>
-          🎟 {tokens} token{tokens !== 1 ? 's' : ''}
+          {redeeming ? '⏳ Adding tokens...' : `🎟 ${tokens} token${tokens !== 1 ? 's' : ''}`}
         </div>
       </div>
 
       <div style={{ maxWidth: '540px', margin: '0 auto', padding: '32px 20px 60px' }}>
 
         {/* Notifications */}
+        {redeeming && (
+          <div style={{ background: 'rgba(0,255,136,0.04)', border: '1.5px solid rgba(0,255,136,0.2)', borderRadius: 'var(--radius-md)', padding: '14px 20px', marginBottom: '16px', textAlign: 'center' }}>
+            <p style={{ color: 'var(--neon)', fontWeight: 600, fontSize: '14px' }}>⏳ Confirming your payment...</p>
+          </div>
+        )}
         {success && (
           <div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '16px 20px', marginBottom: '20px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
             <p style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '16px' }}>🎵 Request sent!</p>
@@ -171,7 +226,7 @@ export default function ShowPage() {
         )}
 
         {/* Token packages */}
-        <div style={{ marginBottom: '8px' }}>
+        <div>
           <h2 style={{ fontWeight: 800, fontSize: '18px', marginBottom: '4px' }}>Get Tokens</h2>
           <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '18px' }}>
             Each token lets you request one song from {show.displayName}

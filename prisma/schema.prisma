@@ -8,18 +8,18 @@ datasource db {
 }
 
 model User {
-  id                String    @id @default(uuid())
-  email             String    @unique
-  password          String
-  slug              String    @unique
-  displayName       String    @default("")
-  stripeAccountId   String?
-  stripeOnboarded   Boolean   @default(false)
-  resetToken        String?
-  resetTokenExpiry  DateTime?
-  createdAt         DateTime  @default(now())
-  songs             Song[]
-  queue             QueueItem[]
+  id               String    @id @default(uuid())
+  email            String    @unique
+  password         String
+  slug             String    @unique
+  displayName      String    @default("")
+  stripeAccountId  String?
+  stripeOnboarded  Boolean   @default(false)
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime  @default(now())
+  songs            Song[]
+  queue            QueueItem[]
 }
 
 model Song {
@@ -51,4 +51,13 @@ model TokenPackage {
   tokens Int
   price  Int
   active Boolean @default(true)
+}
+
+model TokenGrant {
+  id              String   @id @default(uuid())
+  stripeSessionId String   @unique
+  tokens          Int
+  slug            String
+  redeemed        Boolean  @default(false)
+  createdAt       DateTime @default(now())
 }

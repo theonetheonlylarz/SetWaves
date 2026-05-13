@@ -5,11 +5,21 @@ const Spinner = () => (
   <div style={{ width: '32px', height: '32px', border: '3px solid var(--border)', borderTopColor: 'var(--neon)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
 )
 
+const COIN_PRESETS = [5, 10, 25, 50]
+const COINS_KEY = 'nextup_coins'
+
+function getStoredCoins() {
+  try { return Math.max(0, parseInt(localStorage.getItem(COINS_KEY) || '0', 10)) } catch { return 0 }
+}
+function storeCoins(n) {
+  try { localStorage.setItem(COINS_KEY, String(Math.max(0, n))) } catch {}
+}
+
 export default function ShowPage() {
   const { slug } = useParams()
   const [params, setParams] = useSearchParams()
   const [show, setShow] = useState(null)
-  const [tokens, setTokens] = useState(0)
+  const [coins, setCoins] = useState(getStoredCoins)
   const [redeeming, setRedeeming] = useState(false)
   const [requester, setRequester] = useState('')
   const [selectedSong, setSelectedSong] = useState('')
@@ -17,91 +27,92 @@ export default function ShowPage() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [buyMode, setBuyMode] = useState(false)
+  const [customCoins, setCustomCoins] = useState('')
+  const [buying, setBuying] = useState(false)
   const wsRef = useRef(null)
+
+  // Keep localStorage in sync
+  useEffect(() => { storeCoins(coins) }, [coins])
 
   const fetchShow = async () => {
     try {
       const res = await fetch('/api/show/' + slug)
       if (res.ok) setShow(await res.json())
-    } catch (e) {}
+    } catch {}
   }
 
   useEffect(() => { fetchShow() }, [slug])
 
-  // Securely redeem tokens after Stripe checkout — ?grant=SESSION_ID
-  // The session ID is set by Stripe in success_url via {CHECKOUT_SESSION_ID} template
+  // Secure grant redemption after Stripe checkout (?grant=SESSION_ID)
   useEffect(() => {
-    const grantSessionId = params.get('grant')
-    if (!grantSessionId) return
+    const grantId = params.get('grant')
+    if (!grantId) return
     setRedeeming(true)
     let attempts = 0
-    const maxAttempts = 8
-
     const tryRedeem = async () => {
       try {
-        const res = await fetch(`/api/tokens/redeem/${grantSessionId}`)
+        const res = await fetch(`/api/tokens/redeem/${grantId}`)
         const data = await res.json()
         if (res.ok) {
-          setTokens(t => t + data.tokens)
+          setCoins(c => c + data.tokens)
           setRedeeming(false)
-          // Clean grant param from URL without triggering navigation
           const next = new URLSearchParams(params)
           next.delete('grant')
           setParams(next, { replace: true })
         } else if (res.status === 409) {
-          // Already redeemed (page refresh) — silently ignore
+          // Already redeemed (page refresh) — silently clear
           setRedeeming(false)
           const next = new URLSearchParams(params)
           next.delete('grant')
           setParams(next, { replace: true })
-        } else if (res.status === 404 && attempts < maxAttempts) {
-          // Webhook still in flight — retry with backoff
+        } else if (res.status === 404 && attempts < 8) {
           attempts++
           setTimeout(tryRedeem, 1500)
         } else {
-          setError('Token redemption failed. Your payment was received — contact the performer for help.')
+          setError('Redemption failed — your payment was received. Contact the performer for help.')
           setRedeeming(false)
         }
       } catch {
-        if (attempts < maxAttempts) {
-          attempts++
-          setTimeout(tryRedeem, 1500)
-        } else {
-          setError('Could not connect to redeem tokens. Check your connection.')
-          setRedeeming(false)
-        }
+        if (attempts < 8) { attempts++; setTimeout(tryRedeem, 1500) }
+        else { setError('Network error during redemption.'); setRedeeming(false) }
       }
     }
-
     tryRedeem()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // WebSocket via slug — fan page gets live queue updates
   useEffect(() => {
     if (!slug) return
     const wsBase = window.location.origin.replace(/^http/, 'ws')
-    wsRef.current = new WebSocket(wsBase + '/ws/' + slug)
+    wsRef.current = new WebSocket(`${wsBase}/ws/${slug}`)
     wsRef.current.onmessage = () => fetchShow()
     return () => wsRef.current?.close()
   }, [slug])
 
-  const buyTokens = async (pkg) => {
-    setError('')
+  const buyCoins = async (amount) => {
+    if (!show?.stripeEnabled) return setError('Payments are not available for this show right now.')
+    const n = parseInt(amount, 10)
+    if (isNaN(n) || n < 1) return setError('Enter a valid coin amount')
+    setBuying(true); setError('')
     try {
       const res = await fetch('/api/stripe/checkout/' + slug, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ packageId: pkg.id })
+        body: JSON.stringify({ coins: n })
       })
       const data = await res.json()
       if (data.url) window.location.href = data.url
       else setError(data.error || 'Checkout unavailable right now')
-    } catch (e) { setError('Network error') }
+    } catch { setError('Network error') }
+    finally { setBuying(false) }
   }
 
   const requestSong = async (e) => {
     e.preventDefault()
-    if (tokens < 1) return setError('You need tokens to request a song')
+    const cost = show?.queueCoinCost || 1
+    if (coins < cost) return setError(`You need ${cost} coin${cost !== 1 ? 's' : ''} to request a song`)
     const title = customSong.trim() || selectedSong
     if (!title) return setError('Please select or enter a song')
     setSubmitting(true); setError('')
@@ -113,7 +124,7 @@ export default function ShowPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setTokens(t => t - 1)
+      setCoins(c => c - cost)
       setSelectedSong(''); setCustomSong('')
       setSuccess(true); setTimeout(() => setSuccess(false), 5000)
     } catch (err) { setError(err.message) }
@@ -128,150 +139,165 @@ export default function ShowPage() {
     </div>
   )
 
-  const packages = show.packages || []
+  const cost = show.queueCoinCost || 1
+  const hasEnough = coins >= cost
+  const liveQueue = show.queue || []
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+
       {/* Hero */}
-      <div style={{
-        background: 'radial-gradient(ellipse 120% 80% at 50% -5%, rgba(0,255,136,0.1) 0%, transparent 65%)',
-        borderBottom: '1px solid var(--border)',
-        padding: '52px 20px 44px',
-        textAlign: 'center',
-      }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', marginBottom: '18px', padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '20px' }}>
+      <div style={{ background: 'radial-gradient(ellipse 120% 80% at 50% -5%, rgba(0,255,136,0.1) 0%, transparent 65%)', borderBottom: '1px solid var(--border)', padding: '48px 20px 36px', textAlign: 'center' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', marginBottom: '16px', padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '20px' }}>
           <div style={{ width: '18px', height: '18px', background: 'var(--neon)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', flexShrink: 0 }}>🎵</div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Next Up</span>
         </div>
-
-        <h1 style={{ fontSize: '38px', fontWeight: 900, color: 'var(--text)', letterSpacing: '-0.8px', lineHeight: '1.1', marginBottom: '20px', maxWidth: '480px', margin: '0 auto 20px' }}>
+        <h1 style={{ fontSize: '36px', fontWeight: 900, color: 'var(--text)', letterSpacing: '-0.8px', lineHeight: '1.1', margin: '0 auto 16px', maxWidth: '480px' }}>
           {show.displayName}
         </h1>
-
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '8px',
-          background: tokens > 0 ? 'rgba(0,255,136,0.08)' : 'var(--surface)',
-          border: `1.5px solid ${tokens > 0 ? 'rgba(0,255,136,0.3)' : 'var(--border)'}`,
-          borderRadius: '24px',
-          padding: '9px 20px',
-          fontSize: '14px',
-          fontWeight: 700,
-          color: tokens > 0 ? 'var(--neon)' : 'var(--muted)',
-          transition: 'all 0.3s ease',
-        }}>
-          {redeeming ? '⏳ Adding tokens...' : `🎟 ${tokens} token${tokens !== 1 ? 's' : ''}`}
+        {/* Coin balance pill */}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: coins > 0 ? 'rgba(0,255,136,0.08)' : 'var(--surface)', border: `1.5px solid ${coins > 0 ? 'rgba(0,255,136,0.3)' : 'var(--border)'}`, borderRadius: '24px', padding: '8px 18px', fontSize: '14px', fontWeight: 700, color: coins > 0 ? 'var(--neon)' : 'var(--muted)', transition: 'all 0.3s ease' }}>
+          {redeeming ? '⏳ Adding coins...' : `🪙 ${coins} coin${coins !== 1 ? 's' : ''}`}
         </div>
       </div>
 
-      <div style={{ maxWidth: '540px', margin: '0 auto', padding: '32px 20px 60px' }}>
+      <div style={{ maxWidth: '540px', margin: '0 auto', padding: '28px 20px 60px' }}>
 
-        {/* Notifications */}
+        {/* Alerts */}
         {redeeming && (
-          <div style={{ background: 'rgba(0,255,136,0.04)', border: '1.5px solid rgba(0,255,136,0.2)', borderRadius: 'var(--radius-md)', padding: '14px 20px', marginBottom: '16px', textAlign: 'center' }}>
+          <div style={{ background: 'rgba(0,255,136,0.04)', border: '1.5px solid rgba(0,255,136,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '14px', textAlign: 'center' }}>
             <p style={{ color: 'var(--neon)', fontWeight: 600, fontSize: '14px' }}>⏳ Confirming your payment...</p>
           </div>
         )}
         {success && (
-          <div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '16px 20px', marginBottom: '20px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
+          <div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
             <p style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '16px' }}>🎵 Request sent!</p>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px' }}>You're in the queue. Enjoy the show!</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>You're in the queue!</p>
           </div>
         )}
-        {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+        {error && <div className="error" style={{ marginBottom: '14px' }}>{error}</div>}
 
-        {/* Request form */}
-        {tokens > 0 ? (
-          <div className="card" style={{ marginBottom: '28px', borderColor: 'rgba(0,255,136,0.15)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '18px' }}>
+        {/* ── BUY COINS PANEL ── */}
+        {buyMode ? (
+          <div className="card" style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
-                <h2 style={{ fontWeight: 800, fontSize: '18px' }}>Request a Song</h2>
-                <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '3px' }}>Uses 1 token per request</p>
+                <h2 style={{ fontWeight: 800, fontSize: '18px', marginBottom: '3px' }}>Get Coins</h2>
+                <p style={{ color: 'var(--muted)', fontSize: '13px' }}>🪙 $1 per coin · no expiry</p>
               </div>
-              <span style={{ background: 'var(--neon-dim)', color: 'var(--neon)', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(0,255,136,0.2)', whiteSpace: 'nowrap' }}>
-                🎟 {tokens} left
-              </span>
+              <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
             </div>
-            <form onSubmit={requestSong} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <input
-                placeholder="Your name (optional)"
-                value={requester}
-                onChange={e => setRequester(e.target.value)}
-              />
-              {show.songs && show.songs.length > 0 && (
-                <select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}>
-                  <option value="">Pick from setlist...</option>
-                  {show.songs.map(s => (
-                    <option key={s.id} value={s.title}>{s.title}{s.artist ? ' — ' + s.artist : ''}</option>
-                  ))}
-                </select>
-              )}
-              <input
-                placeholder={show.songs?.length > 0 ? 'Or type any song...' : 'Song title...'}
-                value={customSong}
-                onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }}
-              />
-              <button type="submit" className="btn-primary" disabled={submitting} style={{ padding: '14px', fontSize: '15px', borderRadius: '10px', marginTop: '4px' }}>
-                {submitting ? 'Sending...' : '🎵 Send Request — 1 token'}
-              </button>
-            </form>
+
+            {/* Preset grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+              {COIN_PRESETS.map(n => (
+                <button key={n} onClick={() => buyCoins(n)} disabled={buying}
+                  style={{ background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '16px 12px', cursor: 'pointer', color: 'var(--text)', textAlign: 'center', transition: 'all 0.15s', fontFamily: 'inherit' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(0,255,136,0.4)'; e.currentTarget.style.background='rgba(0,255,136,0.04)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)'; }}>
+                  <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--neon)' }}>🪙 {n}</div>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>${n}.00</div>
+                </button>
+              ))}
+            </div>
+
+            {/* Custom amount */}
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Custom amount</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input type="number" min="1" max="999" placeholder="How many coins?" value={customCoins}
+                  onChange={e => setCustomCoins(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && customCoins && buyCoins(customCoins)}
+                  style={{ flex: 1 }} />
+                <button onClick={() => buyCoins(customCoins)} className="btn-primary"
+                  disabled={!customCoins || buying} style={{ flexShrink: 0, padding: '0 18px', whiteSpace: 'nowrap' }}>
+                  {buying ? '...' : customCoins && parseInt(customCoins) > 0 ? `Pay $${parseInt(customCoins)}` : 'Buy'}
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="card" style={{ marginBottom: '28px', textAlign: 'center', padding: '32px', border: '1.5px dashed var(--border)' }}>
-            <div style={{ fontSize: '36px', marginBottom: '12px' }}>🎟</div>
-            <p style={{ fontWeight: 700, fontSize: '17px', marginBottom: '6px' }}>No tokens yet</p>
-            <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Pick a package below to request songs</p>
+          <>
+            {/* ── REQUEST FORM or GET COINS CTA ── */}
+            {hasEnough ? (
+              <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(0,255,136,0.15)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                  <div>
+                    <h2 style={{ fontWeight: 800, fontSize: '18px' }}>Request a Song</h2>
+                    <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '3px' }}>
+                      Costs <span style={{ color: 'var(--neon)', fontWeight: 700 }}>🪙 {cost}</span> coin{cost !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  <span style={{ background: 'var(--neon-dim)', color: 'var(--neon)', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(0,255,136,0.2)', whiteSpace: 'nowrap' }}>
+                    🪙 {coins} left
+                  </span>
+                </div>
+                <form onSubmit={requestSong} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <input placeholder="Your name (optional)" value={requester} onChange={e => setRequester(e.target.value)} />
+                  {show.songs?.length > 0 && (
+                    <select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}>
+                      <option value="">Pick from setlist...</option>
+                      {show.songs.map(s => (
+                        <option key={s.id} value={s.title}>{s.title}{s.artist ? ' — ' + s.artist : ''}</option>
+                      ))}
+                    </select>
+                  )}
+                  <input placeholder={show.songs?.length > 0 ? 'Or type any song...' : 'Song title...'}
+                    value={customSong} onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }} />
+                  <button type="submit" className="btn-primary" disabled={submitting}
+                    style={{ padding: '14px', fontSize: '15px', borderRadius: '10px', marginTop: '2px' }}>
+                    {submitting ? 'Sending...' : `🎵 Request · 🪙 ${cost} coin${cost !== 1 ? 's' : ''}`}
+                  </button>
+                </form>
+                <div style={{ textAlign: 'center', marginTop: '12px' }}>
+                  <button onClick={() => { setBuyMode(true); setError('') }}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>
+                    + Get more coins
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="card" style={{ marginBottom: '24px', textAlign: 'center', padding: '36px 24px', border: '1.5px dashed var(--border)' }}>
+                <div style={{ fontSize: '44px', marginBottom: '12px' }}>🪙</div>
+                <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '6px' }}>
+                  {coins === 0 ? 'No coins yet' : `Need ${cost - coins} more coin${cost - coins !== 1 ? 's' : ''}`}
+                </p>
+                <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '22px' }}>
+                  {cost === 1 ? 'Get coins to request songs · $1 each' : `${cost} coins needed per request · $1 each`}
+                </p>
+                <button onClick={() => { setBuyMode(true); setError('') }} className="btn-primary"
+                  style={{ padding: '13px 32px', fontSize: '15px' }}>
+                  🪙 Get Coins
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── LIVE QUEUE ── */}
+        {liveQueue.length > 0 && (
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <h2 style={{ fontWeight: 800, fontSize: '16px', color: 'var(--text-secondary)' }}>🎶 Up Next</h2>
+              <span style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', padding: '2px 8px' }}>{liveQueue.length}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {liveQueue.slice(0, 8).map((item, i) => (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', opacity: i === 0 ? 1 : 0.65 }}>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.songTitle}</p>
+                    <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '1px' }}>{item.requester}</p>
+                  </div>
+                  {i === 0 && (
+                    <span style={{ fontSize: '11px', color: 'var(--neon)', fontWeight: 700, background: 'var(--neon-dim)', padding: '2px 8px', borderRadius: '10px', border: '1px solid rgba(0,255,136,0.15)', whiteSpace: 'nowrap' }}>Playing soon</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Token packages */}
-        <div>
-          <h2 style={{ fontWeight: 800, fontSize: '18px', marginBottom: '4px' }}>Get Tokens</h2>
-          <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '18px' }}>
-            Each token lets you request one song from {show.displayName}
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {packages.map((pkg, i) => (
-              <button
-                key={pkg.id}
-                onClick={() => buyTokens(pkg)}
-                style={{
-                  background: i === 1 ? 'rgba(0,255,136,0.04)' : 'var(--surface)',
-                  border: `1.5px solid ${i === 1 ? 'rgba(0,255,136,0.25)' : 'var(--border)'}`,
-                  borderRadius: 'var(--radius-md)',
-                  padding: '18px 20px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  color: 'var(--text)',
-                  width: '100%',
-                  textAlign: 'left',
-                  transition: 'all 0.18s ease',
-                  position: 'relative',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,0,0,0.4)'; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
-              >
-                {i === 1 && (
-                  <span style={{ position: 'absolute', top: '-10px', right: '16px', background: 'var(--neon)', color: '#000', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '10px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    Best value
-                  </span>
-                )}
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: '15px' }}>{pkg.name}</p>
-                  <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '3px' }}>
-                    {pkg.tokens} song request{pkg.tokens !== 1 ? 's' : ''}
-                  </p>
-                </div>
-                <span style={{ color: 'var(--neon)', fontWeight: 900, fontSize: '20px', letterSpacing: '-0.5px' }}>
-                  ${(pkg.price / 100).toFixed(2)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <style>{`

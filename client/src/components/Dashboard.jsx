@@ -16,6 +16,9 @@ export default function Dashboard() {
   const [displayName, setDisplayName] = useState('')
   const [editingName, setEditingName] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [coinCost, setCoinCost] = useState(1)
+  const [savingPricing, setSavingPricing] = useState(false)
+  const [pricingSaved, setPricingSaved] = useState(false)
   const navigate = useNavigate()
   const wsRef = useRef(null)
   const token = localStorage.getItem('token')
@@ -34,6 +37,7 @@ export default function Dashboard() {
       const songsData = await songsRes.json()
       setProfile(profileData)
       setDisplayName(profileData.displayName)
+      setCoinCost(profileData.queueCoinCost ?? 1)
       setQueue(Array.isArray(queueData) ? queueData : [])
       setSongs(Array.isArray(songsData) ? songsData : [])
     } catch (e) { setError(e.message) }
@@ -86,6 +90,17 @@ export default function Dashboard() {
     fetchAll()
   }
 
+  const savePricing = async () => {
+    const val = parseInt(coinCost, 10)
+    if (!val || val < 1 || val > 100) return
+    setSavingPricing(true)
+    await fetch('/api/pricing', { method: 'PUT', headers, body: JSON.stringify({ queueCoinCost: val }) })
+    setSavingPricing(false)
+    setPricingSaved(true)
+    setTimeout(() => setPricingSaved(false), 2500)
+    fetchAll()
+  }
+
   if (!profile) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '14px', background: 'var(--bg)' }}>
       <Spinner />
@@ -104,7 +119,6 @@ export default function Dashboard() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
-      {/* Header */}
       <header style={{
         background: 'rgba(15,15,26,0.85)',
         borderBottom: '1px solid var(--border)',
@@ -157,7 +171,6 @@ export default function Dashboard() {
       <main style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 20px' }}>
         {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
 
-        {/* Tab Bar */}
         <div style={{
           display: 'flex',
           gap: '2px',
@@ -195,7 +208,6 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Queue */}
         {tab === 'queue' && (
           <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {activeQueue.length === 0 ? (
@@ -209,26 +221,25 @@ export default function Dashboard() {
                 </a>
               </div>
             ) : activeQueue.map((item, i) => (
-              <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderLeft: '3px solid var(--neon)', animation: `fadeUp 0.2s ease ${i * 0.04}s both` }}>
+              <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderLeft: '3px solid var(--neon)', animation: 'fadeUp 0.2s ease ' + (i * 0.04) + 's both' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ width: '38px', height: '38px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🎵</div>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: '15px' }}>{item.songTitle}</p>
                     <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
                       from <span style={{ color: 'var(--text-secondary)' }}>{item.requester}</span>
-                      <span style={{ marginLeft: '8px', color: 'var(--border-active)', fontSize: '11px', fontWeight: 600 }}>🎟 {item.tokens}</span>
+                      <span style={{ marginLeft: '8px', color: 'var(--border-active)', fontSize: '11px', fontWeight: 600 }}>🪙 {item.tokens}</span>
                     </p>
                   </div>
                 </div>
                 <button onClick={() => markPlayed(item.id)} className="btn-secondary" style={{ fontSize: '12px', padding: '6px 14px', flexShrink: 0 }}>
-                  ✓ Done
+                  ✓ Played
                 </button>
               </div>
             ))}
           </div>
         )}
 
-        {/* Songs / Setlist */}
         {tab === 'songs' && (
           <div className="fade-up">
             <div className="card" style={{ marginBottom: '16px' }}>
@@ -277,7 +288,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* QR Code */}
         {tab === 'qr' && (
           <div className="fade-up">
             <div className="card" style={{ textAlign: 'center', padding: '48px 32px' }}>
@@ -308,7 +318,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Settings */}
         {tab === 'settings' && (
           <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div className="card">
@@ -328,12 +337,41 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+
+            <div className="card">
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Song Request Price</h3>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '6px' }}>
+                How many coins fans must spend to request a song (1 coin = $1)
+              </p>
+              <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: '16px', opacity: 0.75 }}>
+                {'At $1 per coin, each request costs fans $' + coinCost + ' · Platform keeps 10%, you receive 90%'}
+              </p>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={coinCost}
+                  onChange={e => setCoinCost(e.target.value)}
+                  style={{ width: '100px' }}
+                />
+                <button
+                  onClick={savePricing}
+                  className="btn-primary"
+                  style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                  disabled={savingPricing}
+                >
+                  {savingPricing ? 'Saving...' : pricingSaved ? '✓ Saved' : 'Save'}
+                </button>
+              </div>
+            </div>
+
             <div className="card">
               <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Your Show Link</h3>
               <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '14px' }}>Share with fans or display alongside your QR code</p>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <div style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {window?.location?.origin}/show/{profile.slug}
+                  {window?.location?.origin + '/show/' + profile.slug}
                 </div>
                 <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer" style={{ flexShrink: 0, padding: '10px 14px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>
                   Open ↗
@@ -344,7 +382,7 @@ export default function Dashboard() {
         )}
       </main>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
     </div>
   )
 }

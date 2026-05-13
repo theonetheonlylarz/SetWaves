@@ -17,6 +17,7 @@ export default function Dashboard() {
   const [editingName, setEditingName] = useState(false)
   const [saving, setSaving] = useState(false)
   const [coinCost, setCoinCost] = useState(1)
+  const [jumpCost, setJumpCost] = useState(5)
   const [savingPricing, setSavingPricing] = useState(false)
   const [pricingSaved, setPricingSaved] = useState(false)
   const navigate = useNavigate()
@@ -38,6 +39,7 @@ export default function Dashboard() {
       setProfile(profileData)
       setDisplayName(profileData.displayName)
       setCoinCost(profileData.queueCoinCost ?? 1)
+      setJumpCost(profileData.queueJumpCost ?? 5)
       setQueue(Array.isArray(queueData) ? queueData : [])
       setSongs(Array.isArray(songsData) ? songsData : [])
     } catch (e) { setError(e.message) }
@@ -91,10 +93,12 @@ export default function Dashboard() {
   }
 
   const savePricing = async () => {
-    const val = parseInt(coinCost, 10)
-    if (!val || val < 1 || val > 100) return
+    const costVal = parseInt(coinCost, 10)
+    const jumpVal = parseInt(jumpCost, 10)
+    if (!costVal || costVal < 1 || costVal > 100) return
+    if (!jumpVal || jumpVal < 1 || jumpVal > 100) return
     setSavingPricing(true)
-    await fetch('/api/pricing', { method: 'PUT', headers, body: JSON.stringify({ queueCoinCost: val }) })
+    await fetch('/api/pricing', { method: 'PUT', headers, body: JSON.stringify({ queueCoinCost: costVal, queueJumpCost: jumpVal }) })
     setSavingPricing(false)
     setPricingSaved(true)
     setTimeout(() => setPricingSaved(false), 2500)
@@ -141,69 +145,23 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <a
-            href={'/show/' + profile.slug}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              fontSize: '13px',
-              color: 'var(--neon)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              padding: '6px 12px',
-              background: 'var(--neon-dim)',
-              borderRadius: '7px',
-              fontWeight: 600,
-              border: '1px solid rgba(0,255,136,0.2)',
-              textDecoration: 'none',
-              transition: 'all 0.15s',
-            }}
-          >
+          <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer"
+            style={{ fontSize: '13px', color: 'var(--neon)', display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', background: 'var(--neon-dim)', borderRadius: '7px', fontWeight: 600, border: '1px solid rgba(0,255,136,0.2)', textDecoration: 'none', transition: 'all 0.15s' }}>
             View Show ↗
           </a>
-          <button onClick={logout} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>
-            Sign out
-          </button>
+          <button onClick={logout} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>Sign out</button>
         </div>
       </header>
 
       <main style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 20px' }}>
         {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
 
-        <div style={{
-          display: 'flex',
-          gap: '2px',
-          marginBottom: '24px',
-          background: 'var(--surface)',
-          padding: '3px',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border)',
-        }}>
+        <div style={{ display: 'flex', gap: '2px', marginBottom: '24px', background: 'var(--surface)', padding: '3px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
           {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              style={{
-                flex: 1,
-                padding: '8px 10px',
-                borderRadius: '9px',
-                background: tab === t.id ? 'var(--surface2)' : 'transparent',
-                color: tab === t.id ? 'var(--text)' : 'var(--muted)',
-                fontSize: '13px',
-                fontWeight: 600,
-                border: tab === t.id ? '1px solid var(--border)' : '1px solid transparent',
-                boxShadow: tab === t.id ? '0 1px 6px rgba(0,0,0,0.3)' : 'none',
-                transition: 'all 0.15s',
-                gap: '6px',
-              }}
-            >
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: '9px', background: tab === t.id ? 'var(--surface2)' : 'transparent', color: tab === t.id ? 'var(--text)' : 'var(--muted)', fontSize: '13px', fontWeight: 600, border: tab === t.id ? '1px solid var(--border)' : '1px solid transparent', boxShadow: tab === t.id ? '0 1px 6px rgba(0,0,0,0.3)' : 'none', transition: 'all 0.15s' }}>
               {t.label}
-              {t.badge > 0 && (
-                <span style={{ background: 'var(--neon)', color: '#000', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px', marginLeft: '2px' }}>
-                  {t.badge}
-                </span>
-              )}
+              {t.badge > 0 && <span style={{ background: 'var(--neon)', color: '#000', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px', marginLeft: '2px' }}>{t.badge}</span>}
             </button>
           ))}
         </div>
@@ -221,14 +179,19 @@ export default function Dashboard() {
                 </a>
               </div>
             ) : activeQueue.map((item, i) => (
-              <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderLeft: '3px solid var(--neon)', animation: 'fadeUp 0.2s ease ' + (i * 0.04) + 's both' }}>
+              <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderLeft: '3px solid ' + (item.priority ? '#f59e0b' : 'var(--neon)'), animation: 'fadeUp 0.2s ease ' + (i * 0.04) + 's both' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: '38px', height: '38px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🎵</div>
+                  <div style={{ width: '38px', height: '38px', background: item.priority ? 'rgba(245,158,11,0.1)' : 'var(--neon-dim)', border: '1px solid ' + (item.priority ? 'rgba(245,158,11,0.2)' : 'rgba(0,255,136,0.15)'), borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>
+                    {item.priority ? '⚡' : '🎵'}
+                  </div>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: '15px' }}>{item.songTitle}</p>
                     <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
                       from <span style={{ color: 'var(--text-secondary)' }}>{item.requester}</span>
-                      <span style={{ marginLeft: '8px', color: 'var(--border-active)', fontSize: '11px', fontWeight: 600 }}>🪙 {item.tokens}</span>
+                      <span style={{ marginLeft: '8px', color: item.priority ? '#f59e0b' : 'var(--border-active)', fontSize: '11px', fontWeight: 600 }}>
+                        {item.priority ? '⚡' : '🪙'} {item.tokens}
+                      </span>
+                      {item.priority && <span style={{ marginLeft: '6px', fontSize: '10px', color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.1)', padding: '1px 6px', borderRadius: '6px' }}>Priority</span>}
                     </p>
                   </div>
                 </div>
@@ -243,31 +206,15 @@ export default function Dashboard() {
         {tab === 'songs' && (
           <div className="fade-up">
             <div className="card" style={{ marginBottom: '16px' }}>
-              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '14px', fontWeight: 500 }}>
-                Add songs fans can request from your setlist
-              </p>
+              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '14px', fontWeight: 500 }}>Add songs fans can request from your setlist</p>
               <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <input
-                  placeholder="Song title"
-                  value={newSong.title}
-                  onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))}
-                  style={{ flex: '2 1 160px' }}
-                />
-                <input
-                  placeholder="Artist (optional)"
-                  value={newSong.artist}
-                  onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))}
-                  style={{ flex: '2 1 140px' }}
-                />
-                <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0, padding: '11px 18px' }}>
-                  + Add
-                </button>
+                <input placeholder="Song title" value={newSong.title} onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))} style={{ flex: '2 1 160px' }} />
+                <input placeholder="Artist (optional)" value={newSong.artist} onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))} style={{ flex: '2 1 140px' }} />
+                <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0, padding: '11px 18px' }}>+ Add</button>
               </form>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {songs.length === 0 && (
-                <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px 0', fontSize: '14px' }}>No songs yet. Add your first one above.</p>
-              )}
+              {songs.length === 0 && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px 0', fontSize: '14px' }}>No songs yet. Add your first one above.</p>}
               {songs.map(song => (
                 <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s' }}>
                   <div>
@@ -275,12 +222,8 @@ export default function Dashboard() {
                     {song.artist && <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>{song.artist}</p>}
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>
-                      {song.active ? 'Hide' : 'Show'}
-                    </button>
-                    <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>
-                      Delete
-                    </button>
+                    <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>{song.active ? 'Hide' : 'Show'}</button>
+                    <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>Delete</button>
                   </div>
                 </div>
               ))}
@@ -293,19 +236,13 @@ export default function Dashboard() {
             <div className="card" style={{ textAlign: 'center', padding: '48px 32px' }}>
               {qr ? (
                 <>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '15px', fontWeight: 500, marginBottom: '28px' }}>
-                    Display at your show — fans scan to request songs
-                  </p>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '15px', fontWeight: 500, marginBottom: '28px' }}>Display at your show — fans scan to request songs</p>
                   <div style={{ display: 'inline-block', background: '#fff', padding: '16px', borderRadius: '16px', marginBottom: '24px', boxShadow: '0 0 40px rgba(0,255,136,0.1)' }}>
                     <img src={qr.qrCode} alt="QR Code" style={{ width: '220px', height: '220px', display: 'block' }} />
                   </div>
-                  <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '20px', fontFamily: 'monospace', background: 'var(--surface2)', display: 'inline-block', padding: '6px 14px', borderRadius: '6px', border: '1px solid var(--border)' }}>
-                    {qr.url}
-                  </p>
+                  <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '20px', fontFamily: 'monospace', background: 'var(--surface2)', display: 'inline-block', padding: '6px 14px', borderRadius: '6px', border: '1px solid var(--border)' }}>{qr.url}</p>
                   <div style={{ marginTop: '4px' }}>
-                    <a href={qr.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
-                      Open Fan Page ↗
-                    </a>
+                    <a href={qr.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>Open Fan Page ↗</a>
                   </div>
                 </>
               ) : (
@@ -324,45 +261,31 @@ export default function Dashboard() {
               <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Display Name</h3>
               <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '16px' }}>Shown to fans on your public show page</p>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  value={displayName}
-                  onChange={e => setDisplayName(e.target.value)}
-                  onFocus={() => setEditingName(true)}
-                  placeholder="Your stage name"
-                />
-                {editingName && (
-                  <button onClick={saveName} className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} disabled={saving}>
-                    {saving ? 'Saving...' : 'Save'}
-                  </button>
-                )}
+                <input value={displayName} onChange={e => setDisplayName(e.target.value)} onFocus={() => setEditingName(true)} placeholder="Your stage name" />
+                {editingName && <button onClick={saveName} className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>}
               </div>
             </div>
 
             <div className="card">
-              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Song Request Price</h3>
-              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '6px' }}>
-                How many coins fans must spend to request a song (1 coin = $1)
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Song Request Pricing</h3>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '6px' }}>Set coin costs for each request type (1 coin = $1)</p>
+              <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: '18px', opacity: 0.75 }}>
+                {'Standard: fans pay $' + coinCost + ' · Jump to Front: fans pay $' + jumpCost + ' · Platform keeps 10%, you receive 90%'}
               </p>
-              <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: '16px', opacity: 0.75 }}>
-                {'At $1 per coin, each request costs fans $' + coinCost + ' · Platform keeps 10%, you receive 90%'}
-              </p>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={coinCost}
-                  onChange={e => setCoinCost(e.target.value)}
-                  style={{ width: '100px' }}
-                />
-                <button
-                  onClick={savePricing}
-                  className="btn-primary"
-                  style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                  disabled={savingPricing}
-                >
-                  {savingPricing ? 'Saving...' : pricingSaved ? '✓ Saved' : 'Save'}
-                </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🪙 Standard Queue Cost (coins)</label>
+                  <input type="number" min="1" max="100" value={coinCost} onChange={e => setCoinCost(e.target.value)} style={{ width: '120px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>⚡ Jump to Front Cost (coins)</label>
+                  <input type="number" min="1" max="100" value={jumpCost} onChange={e => setJumpCost(e.target.value)} style={{ width: '120px' }} />
+                </div>
+                <div>
+                  <button onClick={savePricing} className="btn-primary" style={{ whiteSpace: 'nowrap' }} disabled={savingPricing}>
+                    {savingPricing ? 'Saving...' : pricingSaved ? '✓ Saved' : 'Save Pricing'}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -373,16 +296,14 @@ export default function Dashboard() {
                 <div style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {window?.location?.origin + '/show/' + profile.slug}
                 </div>
-                <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer" style={{ flexShrink: 0, padding: '10px 14px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>
-                  Open ↗
-                </a>
+                <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer" style={{ flexShrink: 0, padding: '10px 14px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Open ↗</a>
               </div>
             </div>
           </div>
         )}
       </main>
 
-      <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+      <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }'}</style>
     </div>
   )
 }

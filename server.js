@@ -14,7 +14,7 @@ expressWs(app);
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'setwaves-secret-key-change-in-production';
-const CLIENT_URL = process.env.APP_URL || process.env.CLIENT_URL || `http://localhost:${PORT}`;
+const CLIENT_URL = process.env.CLIENT_URL || process.env.APP_URL || `http://localhost:${PORT}`;
 
 let stripeInstance = null;
 if (process.env.STRIPE_SECRET_KEY) {
@@ -22,72 +22,60 @@ if (process.env.STRIPE_SECRET_KEY) {
   stripeInstance = Stripe(process.env.STRIPE_SECRET_KEY);
 }
 
-// ── STRIPE WEBHOOK ─────────────────────────────────────────────────────────────
-// IMPORTANT: Must be registered BEFORE express.json() — Stripe requires raw body
-// for webhook signature verification.
+// ── STRIPE WEBHOOK (must be before express.json) ───────────────────────────────
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
   const sig = req.headers['stripe-signature'];
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!webhookSecret) {
-    console.warn('STRIPE_WEBHOOK_SECRET not set — rejecting webhook');
-    return res.status(400).send('Webhook secret not configured');
-  }
+  if (!webhookSecret) return res.status(400).send('Webhook secret not configured');
   let event;
   try {
     event = stripeInstance.webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    console.error('Webhook verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const { slug, tokens } = session.metadata || {};
-    if (slug && tokens) {
+    const { slug, coins } = session.metadata || {};
+    if (slug && coins) {
       try {
         await prisma.tokenGrant.upsert({
           where: { stripeSessionId: session.id },
           update: {},
-          create: { stripeSessionId: session.id, tokens: parseInt(tokens, 10), slug },
+          create: { stripeSessionId: session.id, tokens: parseInt(coins, 10), slug },
         });
-        console.log(`Token grant created: ${tokens} tokens for show ${slug}`);
-      } catch (e) {
-        console.error('Failed to create token grant:', e.message);
-      }
+        console.log(`Coin grant: ${coins} coins for show ${slug}`);
+      } catch (e) { console.error('Coin grant error:', e.message); }
     }
   }
-
   res.json({ received: true });
 });
 
 app.use(cors());
 app.use(express.json());
 
-// WebSocket clients map: userId -> Set of ws connections
+// WebSocket: key = userId (dashboard) or slug (fan page)
 const wsClients = {};
-function broadcast(userId, msg) {
-  if (wsClients[userId]) {
-    wsClients[userId].forEach(ws => {
+function broadcast(key, msg) {
+  if (wsClients[key]) {
+    wsClients[key].forEach(ws => {
       if (ws.readyState === 1) ws.send(JSON.stringify(msg));
     });
   }
 }
 
-// Auth middleware
 function auth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'No token' });
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.userId = decoded.userId;
+    req.userId = jwt.verify(token, JWT_SECRET).userId;
     next();
-  } catch {
-    res.status(401).json({ error: 'Invalid token' });
-  }
+  } catch { res.status(401).json({ error: 'Invalid token' }); }
 }
 
-// ── AUTH ─────────────────────────────────────────────────────────────────────
+// ── AUTH ──────────────────────────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
   const { email, password, displayName } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -102,7 +90,6 @@ app.post('/api/register', async (req, res) => {
     res.json({ token, user: { id: user.id, email: user.email, slug: user.slug, displayName: user.displayName } });
   } catch (e) {
     if (e.code === 'P2002') return res.status(400).json({ error: 'Email already registered' });
-    console.error(e);
     res.status(500).json({ error: 'Registration failed' });
   }
 });
@@ -110,43 +97,47 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !(await bcrypt.compare(password, user.password))) {
+  if (!user || !(await bcrypt.compare(password, user.password)))
     return res.status(401).json({ error: 'Invalid credentials' });
-  }
   const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
   res.json({ token, user: { id: user.id, email: user.email, slug: user.slug, displayName: user.displayName, stripeOnboarded: user.stripeOnboarded } });
 });
 
 app.post('/api/forgot-password', async (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'Email required' });
-  res.json({ message: 'If that email is registered, a password reset link has been sent.' });
+  if (!req.body.email) return res.status(400).json({ error: 'Email required' });
+  res.json({ message: 'If that email is registered, a reset link has been sent.' });
 });
 
 app.get('/api/profile', auth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.userId } });
   if (!user) return res.status(404).json({ error: 'Not found' });
-  res.json({ id: user.id, email: user.email, slug: user.slug, displayName: user.displayName, stripeOnboarded: user.stripeOnboarded });
+  res.json({ id: user.id, email: user.email, slug: user.slug, displayName: user.displayName, stripeOnboarded: user.stripeOnboarded, queueCoinCost: user.queueCoinCost });
 });
 
 app.put('/api/profile', auth, async (req, res) => {
-  const { displayName } = req.body;
-  const user = await prisma.user.update({ where: { id: req.userId }, data: { displayName } });
+  const user = await prisma.user.update({ where: { id: req.userId }, data: { displayName: req.body.displayName } });
   res.json({ id: user.id, email: user.email, slug: user.slug, displayName: user.displayName });
+});
+
+// Performer sets their pricing
+app.put('/api/pricing', auth, async (req, res) => {
+  const cost = parseInt(req.body.queueCoinCost, 10);
+  if (isNaN(cost) || cost < 1 || cost > 100)
+    return res.status(400).json({ error: 'Coin cost must be between 1 and 100' });
+  const user = await prisma.user.update({ where: { id: req.userId }, data: { queueCoinCost: cost } });
+  res.json({ queueCoinCost: user.queueCoinCost });
 });
 
 // ── SONGS ─────────────────────────────────────────────────────────────────────
 app.get('/api/songs', auth, async (req, res) => {
-  const songs = await prisma.song.findMany({ where: { userId: req.userId }, orderBy: { order: 'asc' } });
-  res.json(songs);
+  res.json(await prisma.song.findMany({ where: { userId: req.userId }, orderBy: { order: 'asc' } }));
 });
 
 app.post('/api/songs', auth, async (req, res) => {
   const { title, artist } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
   const count = await prisma.song.count({ where: { userId: req.userId } });
-  const song = await prisma.song.create({ data: { title, artist: artist || '', userId: req.userId, order: count } });
-  res.json(song);
+  res.json(await prisma.song.create({ data: { title, artist: artist || '', userId: req.userId, order: count } }));
 });
 
 app.delete('/api/songs/:id', auth, async (req, res) => {
@@ -165,45 +156,70 @@ app.patch('/api/songs/:id', auth, async (req, res) => {
 
 // ── QUEUE ─────────────────────────────────────────────────────────────────────
 app.get('/api/queue', auth, async (req, res) => {
-  const queue = await prisma.queueItem.findMany({
+  res.json(await prisma.queueItem.findMany({
     where: { userId: req.userId, played: false },
-    orderBy: [{ tier: 'desc' }, { createdAt: 'asc' }]
-  });
-  res.json(queue);
+    orderBy: { createdAt: 'asc' }
+  }));
 });
 
 app.put('/api/queue/:id/played', auth, async (req, res) => {
   await prisma.queueItem.updateMany({ where: { id: req.params.id, userId: req.userId }, data: { played: true } });
-  broadcast(req.userId, { type: 'PLAYED', id: req.params.id });
+  const user = await prisma.user.findUnique({ where: { id: req.userId } });
+  broadcast(req.userId, { type: 'QUEUE_UPDATE' });
+  if (user) broadcast(user.slug, { type: 'QUEUE_UPDATE' });
   res.json({ success: true });
 });
 
 app.delete('/api/queue/:id', auth, async (req, res) => {
   await prisma.queueItem.deleteMany({ where: { id: req.params.id, userId: req.userId } });
-  broadcast(req.userId, { type: 'REMOVED', id: req.params.id });
+  const user = await prisma.user.findUnique({ where: { id: req.userId } });
+  broadcast(req.userId, { type: 'QUEUE_UPDATE' });
+  if (user) broadcast(user.slug, { type: 'QUEUE_UPDATE' });
   res.json({ success: true });
 });
 
 // ── PUBLIC SHOW ───────────────────────────────────────────────────────────────
 app.get('/api/show/:slug', async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { slug: req.params.slug },
-    include: { songs: { where: { active: true }, orderBy: { order: 'asc' } } }
-  });
-  if (!user) return res.status(404).json({ error: 'Performer not found' });
-  const packages = await prisma.tokenPackage.findMany({ where: { active: true }, orderBy: { price: 'asc' } });
-  res.json({ displayName: user.displayName, slug: user.slug, songs: user.songs, stripeOnboarded: user.stripeOnboarded, packages });
+  try {
+    const user = await prisma.user.findUnique({
+      where: { slug: req.params.slug },
+      include: {
+        songs: { where: { active: true }, orderBy: { order: 'asc' } },
+        queue: { where: { played: false }, orderBy: { createdAt: 'asc' } },
+      }
+    });
+    if (!user) return res.status(404).json({ error: 'Performer not found' });
+    res.json({
+      displayName: user.displayName,
+      slug: user.slug,
+      songs: user.songs,
+      queue: user.queue,
+      queueCoinCost: user.queueCoinCost,
+      stripeOnboarded: user.stripeOnboarded,
+      stripeEnabled: !!stripeInstance,
+    });
+  } catch (e) {
+    console.error('Show error:', e.message);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.post('/api/queue/:slug', async (req, res) => {
-  const { songTitle, requester, tier } = req.body;
+  const { songTitle, requester } = req.body;
   if (!songTitle) return res.status(400).json({ error: 'Song title required' });
   const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
   if (!user) return res.status(404).json({ error: 'Performer not found' });
   const item = await prisma.queueItem.create({
-    data: { songTitle, requester: requester || 'Anonymous', tier: tier || 'STANDARD', tokens: tier === 'PREMIUM' ? 5 : 1, userId: user.id }
+    data: {
+      songTitle,
+      requester: requester || 'Anonymous',
+      tier: 'STANDARD',
+      tokens: user.queueCoinCost,
+      userId: user.id,
+    }
   });
-  broadcast(user.id, { type: 'NEW_REQUEST', item });
+  broadcast(user.id, { type: 'QUEUE_UPDATE' });
+  broadcast(user.slug, { type: 'QUEUE_UPDATE' });
   res.json(item);
 });
 
@@ -228,118 +244,87 @@ app.post('/api/stripe/connect', auth, async (req, res) => {
       type: 'account_onboarding'
     });
     res.json({ url: link.url });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Coins-based checkout: $1 per coin, custom quantity
 app.post('/api/stripe/checkout/:slug', async (req, res) => {
   if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
-  const { packageId } = req.body;
+  const coins = parseInt(req.body.coins, 10);
+  if (isNaN(coins) || coins < 1 || coins > 999)
+    return res.status(400).json({ error: 'Coin amount must be 1–999' });
   const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
-  if (!user) return res.status(404).json({ error: 'Not found' });
-  const pkg = await prisma.tokenPackage.findUnique({ where: { id: packageId } });
-  if (!pkg) return res.status(404).json({ error: 'Package not found' });
+  if (!user) return res.status(404).json({ error: 'Performer not found' });
+  const amountCents = coins * 100;
   try {
     const sessionParams = {
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
           currency: 'usd',
-          product_data: { name: `${pkg.name} — ${pkg.tokens} song request${pkg.tokens !== 1 ? 's' : ''}` },
-          unit_amount: pkg.price,
+          product_data: { name: `${coins} Coin${coins !== 1 ? 's' : ''} — Next Up` },
+          unit_amount: amountCents,
         },
         quantity: 1,
       }],
       mode: 'payment',
-      // slug + tokens stored in metadata so the webhook can create the TokenGrant
-      metadata: { slug: user.slug, tokens: String(pkg.tokens) },
-      // Stripe replaces {CHECKOUT_SESSION_ID} with the real session ID — used for secure token redemption
+      metadata: { slug: user.slug, coins: String(coins) },
       success_url: `${CLIENT_URL}/show/${user.slug}?grant={CHECKOUT_SESSION_ID}`,
       cancel_url: `${CLIENT_URL}/show/${user.slug}`,
     };
-
-    // 90/10 split — only applied once the performer has completed Stripe Connect onboarding
+    // 90/10 split — only when performer has completed Stripe Connect
     if (user.stripeOnboarded && user.stripeAccountId) {
-      sessionParams.application_fee_amount = Math.floor(pkg.price * 0.10); // 10% platform fee
-      sessionParams.transfer_data = { destination: user.stripeAccountId };  // 90% to performer
+      sessionParams.application_fee_amount = Math.floor(amountCents * 0.10);
+      sessionParams.transfer_data = { destination: user.stripeAccountId };
     }
-
     const session = await stripeInstance.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Securely redeem tokens after a verified Stripe payment
-// The session ID comes from the ?grant= URL param set by Stripe's success_url template
+// Redeem coins after verified Stripe payment (one-time)
 app.get('/api/tokens/redeem/:sessionId', async (req, res) => {
   try {
     const grant = await prisma.tokenGrant.findUnique({ where: { stripeSessionId: req.params.sessionId } });
-    if (!grant) {
-      // Webhook may still be in flight — client should retry
-      return res.status(404).json({ error: 'Grant not found — payment is still processing, try again in a moment.' });
-    }
-    if (grant.redeemed) {
+    if (!grant)
+      return res.status(404).json({ error: 'Grant not found — payment may still be processing, try again.' });
+    if (grant.redeemed)
       return res.status(409).json({ error: 'Already redeemed', tokens: grant.tokens });
-    }
     await prisma.tokenGrant.update({ where: { id: grant.id }, data: { redeemed: true } });
     res.json({ tokens: grant.tokens, slug: grant.slug });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── WEBSOCKET ──────────────────────────────────────────────────────────────────
-app.ws('/ws/:userId', (ws, req) => {
-  const { userId } = req.params;
-  if (!wsClients[userId]) wsClients[userId] = new Set();
-  wsClients[userId].add(ws);
+// ── WEBSOCKET ─────────────────────────────────────────────────────────────────
+app.ws('/ws/:key', (ws, req) => {
+  const { key } = req.params;
+  if (!wsClients[key]) wsClients[key] = new Set();
+  wsClients[key].add(ws);
   ws.send(JSON.stringify({ type: 'CONNECTED' }));
   ws.on('close', () => {
-    if (wsClients[userId]) {
-      wsClients[userId].delete(ws);
-      if (!wsClients[userId].size) delete wsClients[userId];
+    if (wsClients[key]) {
+      wsClients[key].delete(ws);
+      if (!wsClients[key].size) delete wsClients[key];
     }
   });
 });
 
-// ── STATIC FILES ───────────────────────────────────────────────────────────────
+// ── STATIC FILES ──────────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api') && !req.path.startsWith('/ws')) {
+  if (!req.path.startsWith('/api') && !req.path.startsWith('/ws'))
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  }
 });
 
-// ── STARTUP ────────────────────────────────────────────────────────────────────
+// ── STARTUP ───────────────────────────────────────────────────────────────────
 async function main() {
   await new Promise(resolve => {
-    exec('npx prisma db push --accept-data-loss', (err, stdout, stderr) => {
+    exec('npx prisma db push --accept-data-loss', (err) => {
       if (err) console.error('prisma db push error:', err.message);
       else console.log('DB schema synced');
       resolve();
     });
   });
-
-  try {
-    const count = await prisma.tokenPackage.count();
-    if (count === 0) {
-      await prisma.tokenPackage.createMany({
-        data: [
-          { name: 'Starter', tokens: 5, price: 199 },
-          { name: 'Popular', tokens: 15, price: 499 },
-          { name: 'VIP', tokens: 50, price: 1499 }
-        ]
-      });
-      console.log('Default token packages seeded');
-    }
-  } catch (e) {
-    console.error('Seed error:', e.message);
-  }
-
-  app.listen(PORT, () => console.log(`Next Up running on port ${PORT}`));
+  app.listen(PORT, () => console.log(`Next Up running on port ${PORT} — CLIENT_URL: ${CLIENT_URL}`));
 }
-
 main().catch(console.error);

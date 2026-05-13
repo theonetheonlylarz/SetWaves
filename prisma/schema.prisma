@@ -17,6 +17,7 @@ model User {
   stripeOnboarded  Boolean   @default(false)
   resetToken       String?
   resetTokenExpiry DateTime?
+  queueCoinCost    Int       @default(1)
   createdAt        DateTime  @default(now())
   songs            Song[]
   queue            QueueItem[]

@@ -117,6 +117,7 @@ app.get('/api/profile', auth, async (req, res) => {
     stripeOnboarded: user.stripeOnboarded,
     queueCoinCost: user.queueCoinCost,
     queueJumpCost: user.queueJumpCost,
+    maxJumpsPerSession: user.maxJumpsPerSession,
   });
 });
 
@@ -128,6 +129,7 @@ app.put('/api/profile', auth, async (req, res) => {
 app.put('/api/pricing', auth, async (req, res) => {
   const cost = parseInt(req.body.queueCoinCost, 10);
   const jumpCost = parseInt(req.body.queueJumpCost, 10);
+  const maxJumps = parseInt(req.body.maxJumpsPerSession, 10);
   const data = {};
   if (!isNaN(cost)) {
     if (cost < 1 || cost > 100) return res.status(400).json({ error: 'Coin cost must be between 1 and 100' });
@@ -137,9 +139,13 @@ app.put('/api/pricing', auth, async (req, res) => {
     if (jumpCost < 1 || jumpCost > 100) return res.status(400).json({ error: 'Jump cost must be between 1 and 100' });
     data.queueJumpCost = jumpCost;
   }
+  if (!isNaN(maxJumps)) {
+    if (maxJumps < 1 || maxJumps > 20) return res.status(400).json({ error: 'Max jumps must be between 1 and 20' });
+    data.maxJumpsPerSession = maxJumps;
+  }
   if (Object.keys(data).length === 0) return res.status(400).json({ error: 'No valid pricing provided' });
   const user = await prisma.user.update({ where: { id: req.userId }, data });
-  res.json({ queueCoinCost: user.queueCoinCost, queueJumpCost: user.queueJumpCost });
+  res.json({ queueCoinCost: user.queueCoinCost, queueJumpCost: user.queueJumpCost, maxJumpsPerSession: user.maxJumpsPerSession });
 });
 
 app.get('/api/songs', auth, async (req, res) => {
@@ -210,6 +216,7 @@ app.get('/api/show/:slug', async (req, res) => {
       queue: user.queue,
       queueCoinCost: user.queueCoinCost,
       queueJumpCost: user.queueJumpCost,
+      maxJumpsPerSession: user.maxJumpsPerSession,
       stripeOnboarded: user.stripeOnboarded,
       stripeEnabled: !!stripeInstance,
     });
@@ -225,11 +232,31 @@ app.post('/api/queue/:slug', async (req, res) => {
   const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
   if (!user) return res.status(404).json({ error: 'Performer not found' });
   const isPriority = !!priority;
+
+  // Enforce jump limit: count pending priority items for this requester
+  if (isPriority) {
+    const requesterName = (requester || 'Anonymous').trim();
+    const jumpCount = await prisma.queueItem.count({
+      where: {
+        userId: user.id,
+        priority: true,
+        played: false,
+        requester: requesterName,
+      },
+    });
+    if (jumpCount >= user.maxJumpsPerSession) {
+      return res.status(429).json({
+        error: "You've reached the jump limit for this show",
+        limit: user.maxJumpsPerSession,
+      });
+    }
+  }
+
   const tokenCost = isPriority ? user.queueJumpCost : user.queueCoinCost;
   const item = await prisma.queueItem.create({
     data: {
       songTitle,
-      requester: requester || 'Anonymous',
+      requester: (requester || 'Anonymous').trim(),
       tier: isPriority ? 'PRIORITY' : 'STANDARD',
       tokens: tokenCost,
       priority: isPriority,

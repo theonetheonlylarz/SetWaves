@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [saving, setSaving] = useState(false)
   const [coinCost, setCoinCost] = useState(1)
   const [jumpCost, setJumpCost] = useState(5)
+  const [maxJumps, setMaxJumps] = useState(2)
   const [savingPricing, setSavingPricing] = useState(false)
   const [pricingSaved, setPricingSaved] = useState(false)
   const navigate = useNavigate()
@@ -40,6 +41,7 @@ export default function Dashboard() {
       setDisplayName(profileData.displayName)
       setCoinCost(profileData.queueCoinCost ?? 1)
       setJumpCost(profileData.queueJumpCost ?? 5)
+      setMaxJumps(profileData.maxJumpsPerSession ?? 2)
       setQueue(Array.isArray(queueData) ? queueData : [])
       setSongs(Array.isArray(songsData) ? songsData : [])
     } catch (e) { setError(e.message) }
@@ -95,10 +97,16 @@ export default function Dashboard() {
   const savePricing = async () => {
     const costVal = parseInt(coinCost, 10)
     const jumpVal = parseInt(jumpCost, 10)
+    const maxVal = parseInt(maxJumps, 10)
     if (!costVal || costVal < 1 || costVal > 100) return
     if (!jumpVal || jumpVal < 1 || jumpVal > 100) return
+    if (!maxVal || maxVal < 1 || maxVal > 20) return
     setSavingPricing(true)
-    await fetch('/api/pricing', { method: 'PUT', headers, body: JSON.stringify({ queueCoinCost: costVal, queueJumpCost: jumpVal }) })
+    await fetch('/api/pricing', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ queueCoinCost: costVal, queueJumpCost: jumpVal, maxJumpsPerSession: maxVal })
+    })
     setSavingPricing(false)
     setPricingSaved(true)
     setTimeout(() => setPricingSaved(false), 2500)
@@ -268,18 +276,31 @@ export default function Dashboard() {
 
             <div className="card">
               <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Song Request Pricing</h3>
-              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '6px' }}>Set coin costs for each request type (1 coin = $1)</p>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '6px' }}>Set coin costs and jump limits for your show (1 coin = $1)</p>
               <p style={{ color: 'var(--muted)', fontSize: '12px', marginBottom: '18px', opacity: 0.75 }}>
-                {'Standard: fans pay $' + coinCost + ' · Jump to Front: fans pay $' + jumpCost + ' · Platform keeps 10%, you receive 90%'}
+                {'Standard: $' + coinCost + ' · Jump to Front: $' + jumpCost + ' · Max jumps: ' + maxJumps + ' per fan · Platform keeps 10%, you receive 90%'}
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🪙 Standard Queue Cost (coins)</label>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    🪙 Standard Queue Cost (coins)
+                  </label>
                   <input type="number" min="1" max="100" value={coinCost} onChange={e => setCoinCost(e.target.value)} style={{ width: '120px' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>⚡ Jump to Front Cost (coins)</label>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    ⚡ Jump to Front Cost (coins)
+                  </label>
                   <input type="number" min="1" max="100" value={jumpCost} onChange={e => setJumpCost(e.target.value)} style={{ width: '120px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    🚦 Max Jumps Per Fan Per Session
+                  </label>
+                  <p style={{ color: 'var(--muted)', fontSize: '11px', marginBottom: '8px' }}>
+                    Once a jumped song is played, that slot opens up again
+                  </p>
+                  <input type="number" min="1" max="20" value={maxJumps} onChange={e => setMaxJumps(e.target.value)} style={{ width: '120px' }} />
                 </div>
                 <div>
                   <button onClick={savePricing} className="btn-primary" style={{ whiteSpace: 'nowrap' }} disabled={savingPricing}>

@@ -8,20 +8,21 @@ datasource db {
 }
 
 model User {
-  id               String      @id @default(uuid())
-  email            String      @unique
-  password         String
-  slug             String      @unique
-  displayName      String      @default("")
-  stripeAccountId  String?
-  stripeOnboarded  Boolean     @default(false)
-  resetToken       String?
-  resetTokenExpiry DateTime?
-  queueCoinCost    Int         @default(1)
-  queueJumpCost    Int         @default(5)
-  createdAt        DateTime    @default(now())
-  songs            Song[]
-  queue            QueueItem[]
+  id                 String      @id @default(uuid())
+  email              String      @unique
+  password           String
+  slug               String      @unique
+  displayName        String      @default("")
+  stripeAccountId    String?
+  stripeOnboarded    Boolean     @default(false)
+  resetToken         String?
+  resetTokenExpiry   DateTime?
+  queueCoinCost      Int         @default(1)
+  queueJumpCost      Int         @default(5)
+  maxJumpsPerSession Int         @default(2)
+  createdAt          DateTime    @default(now())
+  songs              Song[]
+  queue              QueueItem[]
 }
 
 model Song {

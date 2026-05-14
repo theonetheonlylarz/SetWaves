@@ -8,6 +8,12 @@ const Spinner = () => (
 const COIN_PRESETS = [5, 10, 25, 50]
 const COINS_KEY = 'nextup_coins'
 
+const TIER_META = {
+  STANDARD:  { icon: '🎵', label: 'Add to Queue',  color: 'var(--neon)',  bg: 'var(--neon-dim)',          border: 'rgba(0,255,136,0.3)' },
+  PRIORITY:  { icon: '⚡', label: 'Move Up',        color: '#f59e0b',      bg: 'rgba(245,158,11,0.10)',    border: 'rgba(245,158,11,0.4)' },
+  PLAY_NEXT: { icon: '🔥', label: 'Play Next',      color: '#ef4444',      bg: 'rgba(239,68,68,0.10)',     border: 'rgba(239,68,68,0.4)' },
+}
+
 function getStoredCoins() {
   try { return Math.max(0, parseInt(localStorage.getItem(COINS_KEY) || '0', 10)) } catch { return 0 }
 }
@@ -24,18 +30,28 @@ export default function ShowPage() {
   const [requester, setRequester] = useState('')
   const [selectedSong, setSelectedSong] = useState('')
   const [customSong, setCustomSong] = useState('')
+  const [dedication, setDedication] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [buyMode, setBuyMode] = useState(false)
   const [customCoins, setCustomCoins] = useState('')
   const [buying, setBuying] = useState(false)
+  const [genreFilter, setGenreFilter] = useState('All')
+  const [sortAZ, setSortAZ] = useState(false)
   const [jumpsUsed, setJumpsUsed] = useState(() => {
     try { return Math.max(0, parseInt(localStorage.getItem('nextup_jumps_' + slug) || '0', 10)) } catch { return 0 }
   })
+  const [playNextUsed, setPlayNextUsed] = useState(() => {
+    try { return Math.max(0, parseInt(localStorage.getItem('nextup_playnext_' + slug) || '0', 10)) } catch { return 0 }
+  })
+  // Shoutout state
+  const [shoutoutMsg, setShoutoutMsg] = useState('')
+  const [shoutoutName, setShoutoutName] = useState('')
+  const [sendingShoutout, setSendingShoutout] = useState(false)
+  const [shoutoutSuccess, setShoutoutSuccess] = useState(false)
   const wsRef = useRef(null)
 
-  // Keep localStorage in sync
   useEffect(() => { storeCoins(coins) }, [coins])
 
   const fetchShow = async () => {
@@ -84,12 +100,17 @@ export default function ShowPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // WebSocket via slug — fan page gets live queue updates
+  // WebSocket — fan page gets live queue updates
   useEffect(() => {
     if (!slug) return
     const wsBase = window.location.origin.replace(/^http/, 'ws')
     wsRef.current = new WebSocket(wsBase + '/ws/' + slug)
-    wsRef.current.onmessage = () => fetchShow()
+    wsRef.current.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data)
+        if (msg.type === 'QUEUE_UPDATE' || !msg.type) fetchShow()
+      } catch { fetchShow() }
+    }
     return () => wsRef.current?.close()
   }, [slug])
 
@@ -111,13 +132,27 @@ export default function ShowPage() {
     finally { setBuying(false) }
   }
 
-  const handleRequest = async (priority) => {
+  const handleRequest = async (tier) => {
     const cost = show?.queueCoinCost || 1
     const jumpCost = show?.queueJumpCost || 5
-    const deductCost = priority ? jumpCost : cost
+    const playNextCost = show?.playNextCost || 15
+    const maxJumps = show?.maxJumpsPerSession || 2
+    const maxPlayNext = show?.maxPlayNextPerSession || 1
+
+    let deductCost = cost
+    if (tier === 'PRIORITY') deductCost = jumpCost
+    if (tier === 'PLAY_NEXT') deductCost = playNextCost
+
     if (coins < deductCost) {
       return setError('You need ' + deductCost + ' coin' + (deductCost !== 1 ? 's' : '') + ' for this option')
     }
+    if (tier === 'PRIORITY' && jumpsUsed >= maxJumps) {
+      return setError("You've reached the Move Up limit for this show (" + maxJumps + '/' + maxJumps + ')')
+    }
+    if (tier === 'PLAY_NEXT' && playNextUsed >= maxPlayNext) {
+      return setError("You've already used Play Next for this show (" + maxPlayNext + '/' + maxPlayNext + ')')
+    }
+
     const title = customSong.trim() || selectedSong
     if (!title) return setError('Please select or enter a song')
     setSubmitting(true); setError('')
@@ -125,24 +160,59 @@ export default function ShowPage() {
       const res = await fetch('/api/queue/' + slug, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ songTitle: title, requester: requester.trim() || 'Anonymous', priority })
+        body: JSON.stringify({
+          songTitle: title,
+          requester: requester.trim() || 'Anonymous',
+          tier,
+          dedication: dedication.trim().slice(0, 60) || undefined,
+        })
       })
       const data = await res.json()
       if (res.status === 429) {
-        setError(data.error || "You've reached the jump limit for this show")
+        setError(data.error || "You've reached the limit for this show")
         return
       }
       if (!res.ok) throw new Error(data.error)
       setCoins(c => c - deductCost)
-      if (priority) {
+      if (tier === 'PRIORITY') {
         const next = jumpsUsed + 1
         setJumpsUsed(next)
         try { localStorage.setItem('nextup_jumps_' + slug, String(next)) } catch {}
       }
-      setSelectedSong(''); setCustomSong('')
+      if (tier === 'PLAY_NEXT') {
+        const next = playNextUsed + 1
+        setPlayNextUsed(next)
+        try { localStorage.setItem('nextup_playnext_' + slug, String(next)) } catch {}
+      }
+      setSelectedSong(''); setCustomSong(''); setDedication('')
       setSuccess(true); setTimeout(() => setSuccess(false), 5000)
     } catch (err) { setError(err.message) }
     finally { setSubmitting(false) }
+  }
+
+  const handleShoutout = async () => {
+    if (!shoutoutMsg.trim()) return setError('Please enter a shoutout message')
+    const shoutoutCost = show?.shoutoutCost || 10
+    if (coins < shoutoutCost) {
+      return setError('You need ' + shoutoutCost + ' coins to send a shoutout')
+    }
+    setSendingShoutout(true); setError('')
+    try {
+      const res = await fetch('/api/shoutout/' + slug, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: shoutoutMsg.trim(),
+          fromName: shoutoutName.trim() || 'Anonymous',
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setCoins(c => c - shoutoutCost)
+      setShoutoutMsg(''); setShoutoutName('')
+      setShoutoutSuccess(true); setTimeout(() => setShoutoutSuccess(false), 5000)
+    } catch (err) { setError(err.message) }
+    finally { setSendingShoutout(false) }
   }
 
   if (!show) return (
@@ -155,11 +225,41 @@ export default function ShowPage() {
 
   const cost = show.queueCoinCost || 1
   const jumpCost = show.queueJumpCost || 5
+  const playNextCost = show.playNextCost || 15
   const maxJumps = show.maxJumpsPerSession || 2
+  const maxPlayNext = show.maxPlayNextPerSession || 1
+  const shoutoutCost = show.shoutoutCost || 10
   const hasEnough = coins >= cost
-  const hasEnoughForJump = coins >= jumpCost
-  const jumpLimitReached = jumpsUsed >= maxJumps
   const liveQueue = show.queue || []
+
+  // Genre filter logic
+  const availableGenres = ['All', ...[...new Set((show.songs || []).map(s => s.genre).filter(Boolean))].sort()]
+  let filteredSongs = (show.songs || []).filter(s => genreFilter === 'All' || s.genre === genreFilter)
+  if (sortAZ) filteredSongs = [...filteredSongs].sort((a, b) => a.title.localeCompare(b.title))
+
+  const tierButtonStyle = (tier, enabled) => {
+    const meta = TIER_META[tier]
+    return {
+      padding: '12px 8px',
+      fontSize: '14px',
+      borderRadius: '10px',
+      background: enabled ? meta.bg : 'var(--surface2)',
+      border: '1.5px solid ' + (enabled ? meta.border : 'var(--border)'),
+      color: enabled ? meta.color : 'var(--muted)',
+      fontWeight: 700,
+      cursor: enabled ? 'pointer' : 'not-allowed',
+      transition: 'all 0.15s',
+      fontFamily: 'inherit',
+      flex: 1,
+      textAlign: 'center',
+      lineHeight: '1.3',
+    }
+  }
+
+  const canStandard = coins >= cost
+  const canPriority = coins >= jumpCost && jumpsUsed < maxJumps
+  const canPlayNext = coins >= playNextCost && playNextUsed < maxPlayNext
+  const canShoutout = coins >= shoutoutCost
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
@@ -173,7 +273,6 @@ export default function ShowPage() {
         <h1 style={{ fontSize: '36px', fontWeight: 900, color: 'var(--text)', letterSpacing: '-0.8px', lineHeight: '1.1', margin: '0 auto 16px', maxWidth: '480px' }}>
           {show.displayName}
         </h1>
-        {/* Coin balance pill */}
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: coins > 0 ? 'rgba(0,255,136,0.08)' : 'var(--surface)', border: '1.5px solid ' + (coins > 0 ? 'rgba(0,255,136,0.3)' : 'var(--border)'), borderRadius: '24px', padding: '8px 18px', fontSize: '14px', fontWeight: 700, color: coins > 0 ? 'var(--neon)' : 'var(--muted)', transition: 'all 0.3s ease' }}>
           {redeeming ? '⏳ Adding coins...' : '🪙 ' + coins + ' coin' + (coins !== 1 ? 's' : '')}
         </div>
@@ -193,6 +292,12 @@ export default function ShowPage() {
             <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>You're in the queue!</p>
           </div>
         )}
+        {shoutoutSuccess && (
+          <div style={{ background: 'rgba(139,92,246,0.08)', border: '1.5px solid rgba(139,92,246,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
+            <p style={{ color: '#a78bfa', fontWeight: 700, fontSize: '16px' }}>📣 Shoutout sent!</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>The performer will see your message!</p>
+          </div>
+        )}
         {error && <div className="error" style={{ marginBottom: '14px' }}>{error}</div>}
 
         {/* BUY COINS PANEL */}
@@ -203,23 +308,49 @@ export default function ShowPage() {
                 <h2 style={{ fontWeight: 800, fontSize: '18px', marginBottom: '3px' }}>Get Coins</h2>
                 <p style={{ color: 'var(--muted)', fontSize: '13px' }}>🪙 $1 per coin · no expiry</p>
               </div>
-              <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
+              <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>x</button>
             </div>
-
-            {/* Preset grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
-              {COIN_PRESETS.map(amt => (
-                <button key={amt} onClick={() => buyCoins(amt)} disabled={buying}
+              {COIN_PRESETS.map(n => (
+                <button key={n} onClick={() => buyCoins(n)} disabled={buying}
                   style={{ background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '16px 12px', cursor: 'pointer', color: 'var(--text)', textAlign: 'center', transition: 'all 0.15s', fontFamily: 'inherit' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(0,255,136,0.4)'; e.currentTarget.style.background='rgba(0,255,136,0.04)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)'; }}>
-                  <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--neon)' }}>🪙 {amt}</div>
-                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>{'$' + amt + '.00'}</div>
+                  <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--neon)' }}>🪙 {n}</div>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>class n extends HTMLElement{#e;#t;#s=()=>Promise.resolve([]);#o;#a;hasScopes=!1;connectedCallback(){this.#e=parseInt(this.getAttribute("data-max-custom-scopes")||"10",10)}initialize(e,t,s,o){this.#t=e,this.#s=t,this.#o=s,this.#a=o}mode(){return this.createCustomScopeForm.hidden?"manage":"create"}customScopesSubmit(e){"manage"===this.mode()?this.create(""):this.saveCustomScope(e)}customScopesCancel(){"manage"!==this.mode()&&this.hasScopes?this.setMode("manage"):this.customScopesModalDialog.close()}setMode(e){this.hasScopes&&"manage"===e?(this.createCustomScopeForm.hidden=!0,this.manageCustomScopesForm.hidden=!1,this.#i("Saved searches","Create saved search")):(this.createCustomScopeForm.hidden=!1,this.manageCustomScopesForm.hidden=!0)}#i(e,t){this.customScopesSubmitButton.textContent=t,this.customScopesModalDialog.getElementsByTagName("h1")[0].textContent=e}#n(e){let t=e&&(this.#t?.len()||0)>=this.#e;t?this.customScopesModalDialogFlash.innerHTML=`
+        <div class="flash flash-warn tmp-mb-3">
+          Limit of 10 saved searches reached. Please delete an existing saved search before creating a new one.
+        </div>
+      `:this.customScopesModalDialogFlash.textContent="",this.customScopesSubmitButton.disabled=t}async saveCustomScope(e){e.preventDefault();let t=e.target.form;if(!t.checkValidity())return void t.reportValidity();if((await fetch(t.action,{method:"POST",body:new FormData(t)})).ok){this.#t?.clear();let e=await this.#s();this.setScopes(e),t.reset(),this.setMode("manage")}}async show(){let e=await this.#s();this.setScopes(e),this.customScopesModalDialog instanceof HTMLDialogElement?this.customScopesModalDialog.showModal():this.customScopesModalDialog.show(),this.setMode("manage")}openCustomScopesDialog(e){this.customScopesModalDialog instanceof HTMLDialogElement?this.customScopesModalDialog.showModal():this.customScopesModalDialog.show(),e.stopPropagation()}async editCustomScope(e){e.stopPropagation(),e.preventDefault();let t=e.target.getAttribute("data-id");t||(t=e.target.closest("button")?.getAttribute("data-id")||null);let s=await this.#l(t);t&&s&&(this.#i("Update saved search","Update saved search"),this.customScopesIdField.value=s.id,this.customScopesNameField.value=s.name,this.customScopesQueryField.value=s.query,this.#n(!1),this.setMode("create"))}create(e){this.#i("Create saved search","Create saved search"),this.customScopesIdField.value="",this.customScopesNameField.value="",this.customScopesQueryField.value=e,this.customScopesModalDialog instanceof HTMLDialogElement?this.customScopesModalDialog.showModal():this.customScopesModalDialog.show(),this.#n(!0),this.setMode("create")}async #l(e){let t=this.#t?.get();return void 0===t&&(t=await this.#s()),t.find(t=>t.id.toString()===e)}async deleteCustomScope(e){let t=this.#o,s=e.target.getAttribute("data-id");if(s||(s=e.target.closest("button")?.getAttribute("data-id")||null),!t||!s)return;let o=new FormData;if(o.append("id",s),o.append("_method","delete"),(await fetch(t,{method:"POST",headers:{"Scoped-CSRF-Token":this.#a},body:o})).ok){let e=await this.#s();this.setScopes(e)}this.#t?.clear(),this.setMode("manage")}setScopes(e){this.hasScopes=e.length>0;let t=e.map(e=>{let t,s;return(0,i.qy)`
+        <div class="d-flex py-1">
+          <div>
+            <div class="text-bold">${e.name}</div>
+            <div class="text-small color-fg-muted">${e.query}</div>
+          </div>
+          <div class="flex-1"></div>
+          <button
+            type="button"
+            class="btn btn-octicon"
+            data-action="click:qbsearch-input#editCustomScope"
+            data-id="${e.id}"
+            aria-label="Edit saved search"
+          >
+            ${t=document.getElementById("pencil-icon"),(0,i.qy)([t?.innerHTML])}
+          </button>
+          <button
+            type="button"
+            class="btn btn-octicon btn-danger"
+            data-action="click:custom-scopes#deleteCustomScope"
+            data-id="${e.id}"
+            aria-label="Delete saved search"
+          >
+            ${s=document.getElementById("trash-icon"),(0,i.qy)([s?.innerHTML])}
+          </button>
+        </div>
+      `});(0,i.XX)((0,i.qy)`${t}`,this.list)}}.00</div>
                 </button>
               ))}
             </div>
-
-            {/* Custom amount */}
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Custom amount</label>
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -242,63 +373,123 @@ export default function ShowPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                   <div>
                     <h2 style={{ fontWeight: 800, fontSize: '18px' }}>Request a Song</h2>
-                    <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '3px' }}>
-                      Standard: <span style={{ color: 'var(--neon)', fontWeight: 700 }}>🪙 {cost}</span>
+                    <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>
+                      <span style={{ color: 'var(--neon)', fontWeight: 700 }}>🎵 {cost}</span>
                       {' · '}
-                      Jump: <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚡ {jumpCost}</span>
+                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚡ {jumpCost}</span>
+                      {' · '}
+                      <span style={{ color: '#ef4444', fontWeight: 700 }}>🔥 {playNextCost}</span>
                     </p>
                   </div>
-                  <span style={{ background: 'var(--neon-dim)', color: 'var(--neon)', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(0,255,136,0.2)', whiteSpace: 'nowrap' }}>
+                  <span style={{ background: 'var(--neon-dim)', color: 'var(--neon)', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(0,255,136,0.2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                     🪙 {coins} left
                   </span>
                 </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <input placeholder="Your name (optional)" value={requester} onChange={e => setRequester(e.target.value)} />
-                  {show.songs?.length > 0 && (
+
+                  {availableGenres.length > 2 && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {availableGenres.map(g => (
+                            <button key={g} onClick={() => setGenreFilter(g)}
+                              style={{
+                                padding: '4px 11px', fontSize: '12px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit',
+                                background: genreFilter === g ? 'var(--neon-dim)' : 'var(--surface2)',
+                                border: '1px solid ' + (genreFilter === g ? 'rgba(0,255,136,0.3)' : 'var(--border)'),
+                                color: genreFilter === g ? 'var(--neon)' : 'var(--muted)',
+                                transition: 'all 0.15s',
+                              }}>
+                              {g}
+                            </button>
+                          ))}
+                        </div>
+                        <button onClick={() => setSortAZ(v => !v)}
+                          style={{
+                            padding: '4px 10px', fontSize: '11px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, marginLeft: '6px',
+                            background: sortAZ ? 'rgba(139,92,246,0.12)' : 'var(--surface2)',
+                            border: '1px solid ' + (sortAZ ? 'rgba(139,92,246,0.4)' : 'var(--border)'),
+                            color: sortAZ ? '#a78bfa' : 'var(--muted)',
+                            transition: 'all 0.15s',
+                          }}>
+                          A-Z
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {filteredSongs.length > 0 && (
                     <select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}>
                       <option value="">Pick from setlist...</option>
-                      {show.songs.map(s => (
-                        <option key={s.id} value={s.title}>{s.title}{s.artist ? ' — ' + s.artist : ''}</option>
+                      {filteredSongs.map(s => (
+                        <option key={s.id} value={s.title}>{s.title}{s.artist ? ' - ' + s.artist : ''}</option>
                       ))}
                     </select>
                   )}
+
                   <input placeholder={show.songs?.length > 0 ? 'Or type any song...' : 'Song title...'}
                     value={customSong} onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }} />
 
-                  {/* Two action buttons */}
-                  <button
-                    type="button"
-                    onClick={() => handleRequest(false)}
-                    disabled={submitting}
-                    className="btn-primary"
-                    style={{ padding: '13px', fontSize: '15px', borderRadius: '10px' }}
-                  >
-                    {submitting ? 'Sending...' : '🎵 Add to Queue · 🪙 ' + cost + ' coin' + (cost !== 1 ? 's' : '')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRequest(true)}
-                    disabled={submitting || !hasEnoughForJump || jumpLimitReached}
-                    style={{
-                      padding: '13px',
-                      fontSize: '15px',
-                      borderRadius: '10px',
-                      background: (hasEnoughForJump && !jumpLimitReached) ? 'rgba(245,158,11,0.12)' : 'var(--surface2)',
-                      border: '1.5px solid ' + ((hasEnoughForJump && !jumpLimitReached) ? 'rgba(245,158,11,0.4)' : 'var(--border)'),
-                      color: (hasEnoughForJump && !jumpLimitReached) ? '#f59e0b' : 'var(--muted)',
-                      fontWeight: 700,
-                      cursor: (hasEnoughForJump && !jumpLimitReached) ? 'pointer' : 'not-allowed',
-                      transition: 'all 0.15s',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {submitting ? '...' : jumpLimitReached
-                      ? '⚡ Jump limit reached (' + maxJumps + '/' + maxJumps + ')'
-                      : hasEnoughForJump
-                        ? '⚡ Jump to Front · 🪙 ' + jumpCost + ' (max ' + maxJumps + '/session)'
-                        : '⚡ Jump to Front · Need ' + (jumpCost - coins) + ' more coin' + (jumpCost - coins !== 1 ? 's' : '')}
-                  </button>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      placeholder="Dedicate this song to someone? (optional)"
+                      value={dedication}
+                      onChange={e => setDedication(e.target.value.slice(0, 60))}
+                      style={{ paddingRight: '48px' }}
+                    />
+                    {dedication.length > 0 && (
+                      <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: dedication.length >= 55 ? '#ef4444' : 'var(--muted)', fontWeight: 600, pointerEvents: 'none' }}>
+                        {60 - dedication.length}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleRequest('STANDARD')}
+                      disabled={submitting || !canStandard}
+                      style={tierButtonStyle('STANDARD', canStandard && !submitting)}
+                    >
+                      <div style={{ fontSize: '18px', marginBottom: '2px' }}>🎵</div>
+                      <div style={{ fontSize: '12px' }}>Add to Queue</div>
+                      <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>🪙 {cost}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRequest('PRIORITY')}
+                      disabled={submitting || !canPriority}
+                      style={tierButtonStyle('PRIORITY', canPriority && !submitting)}
+                    >
+                      <div style={{ fontSize: '18px', marginBottom: '2px' }}>⚡</div>
+                      <div style={{ fontSize: '12px' }}>Move Up</div>
+                      <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
+                        {jumpsUsed >= maxJumps ? 'Limit reached' : '🪙 ' + jumpCost + ' (' + (maxJumps - jumpsUsed) + ' left)'}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRequest('PLAY_NEXT')}
+                      disabled={submitting || !canPlayNext}
+                      style={tierButtonStyle('PLAY_NEXT', canPlayNext && !submitting)}
+                    >
+                      <div style={{ fontSize: '18px', marginBottom: '2px' }}>🔥</div>
+                      <div style={{ fontSize: '12px' }}>Play Next</div>
+                      <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
+                        {playNextUsed >= maxPlayNext ? 'Limit reached' : '🪙 ' + playNextCost}
+                      </div>
+                    </button>
+                  </div>
+
+                  {submitting && (
+                    <div style={{ textAlign: 'center', padding: '8px' }}>
+                      <Spinner />
+                    </div>
+                  )}
                 </div>
+
                 <div style={{ textAlign: 'center', marginTop: '12px' }}>
                   <button onClick={() => { setBuyMode(true); setError('') }}
                     style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>
@@ -321,41 +512,119 @@ export default function ShowPage() {
                 </button>
               </div>
             )}
+
+            {/* SHOUTOUT SECTION */}
+            <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(139,92,246,0.15)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                <div>
+                  <h2 style={{ fontWeight: 800, fontSize: '17px' }}>📣 Send a Shoutout</h2>
+                  <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>
+                    Send a message to the performer · <span style={{ color: '#a78bfa', fontWeight: 700 }}>🪙 {shoutoutCost} coins</span>
+                  </p>
+                </div>
+                {canShoutout && (
+                  <span style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.25)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    🪙 {coins} left
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input
+                  placeholder="Your name (optional)"
+                  value={shoutoutName}
+                  onChange={e => setShoutoutName(e.target.value)}
+                />
+                <textarea
+                  placeholder="Your message to the performer..."
+                  value={shoutoutMsg}
+                  onChange={e => setShoutoutMsg(e.target.value.slice(0, 200))}
+                  rows={3}
+                  style={{ resize: 'vertical', minHeight: '72px' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleShoutout}
+                  disabled={sendingShoutout || !shoutoutMsg.trim() || !canShoutout}
+                  style={{
+                    padding: '12px',
+                    fontSize: '14px',
+                    borderRadius: '10px',
+                    background: (canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.12)' : 'var(--surface2)',
+                    border: '1.5px solid ' + ((canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.4)' : 'var(--border)'),
+                    color: (canShoutout && shoutoutMsg.trim()) ? '#a78bfa' : 'var(--muted)',
+                    fontWeight: 700,
+                    cursor: (canShoutout && shoutoutMsg.trim()) ? 'pointer' : 'not-allowed',
+                    transition: 'all 0.15s',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {sendingShoutout ? '⏳ Sending...' : !canShoutout
+                    ? ('Need ' + shoutoutCost + ' coins · 🪙 ' + (shoutoutCost - coins) + ' more')
+                    : ('📣 Send Shoutout · 🪙 ' + shoutoutCost + ' coins')}
+                </button>
+                {!canShoutout && coins < shoutoutCost && (
+                  <div style={{ textAlign: 'center' }}>
+                    <button onClick={() => { setBuyMode(true); setError('') }}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>
+                      + Get more coins
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </>
         )}
 
         {/* LIVE QUEUE */}
-        {liveQueue.length > 0 && (
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-              <h2 style={{ fontWeight: 800, fontSize: '16px', color: 'var(--text-secondary)' }}>🎶 Up Next</h2>
-              <span style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', padding: '2px 8px' }}>{liveQueue.length}</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {liveQueue.slice(0, 8).map((item, i) => (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', background: 'var(--surface)', border: '1px solid ' + (item.priority ? 'rgba(245,158,11,0.3)' : 'var(--border)'), borderRadius: 'var(--radius-md)', opacity: i === 0 ? 1 : 0.65 }}>
-                  <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, minWidth: '18px', textAlign: 'center' }}>{i + 1}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.songTitle}</p>
-                    <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '1px' }}>{item.requester}</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
-                    {item.priority && (
-                      <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: '10px', border: '1px solid rgba(245,158,11,0.2)', whiteSpace: 'nowrap' }}>⚡ Priority</span>
-                    )}
-                    {i === 0 && (
-                      <span style={{ fontSize: '11px', color: 'var(--neon)', fontWeight: 700, background: 'var(--neon-dim)', padding: '2px 8px', borderRadius: '10px', border: '1px solid rgba(0,255,136,0.15)', whiteSpace: 'nowrap' }}>Playing soon</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <h2 style={{ fontWeight: 800, fontSize: '16px', color: 'var(--text-secondary)' }}>🎶 Up Next</h2>
+            <span style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', padding: '2px 8px' }}>{liveQueue.length}</span>
           </div>
-        )}
+          {liveQueue.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '36px 24px', background: 'var(--surface)', border: '1.5px dashed var(--border)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontSize: '40px', marginBottom: '10px' }}>🎵</div>
+              <p style={{ fontWeight: 700, fontSize: '16px', marginBottom: '4px' }}>No songs in queue yet</p>
+              <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Be the first to request one! 🎵</p>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {liveQueue.slice(0, 10).map((item, i) => {
+                const tierColor = item.tier === 'PLAY_NEXT' ? '#ef4444' : item.tier === 'PRIORITY' ? '#f59e0b' : 'var(--border)'
+                const tierIcon = item.tier === 'PLAY_NEXT' ? '🔥' : item.tier === 'PRIORITY' ? '⚡' : null
+                const tierLabel = item.tier === 'PLAY_NEXT' ? 'Play Next' : item.tier === 'PRIORITY' ? 'Priority' : null
+                return (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '10px 14px', background: 'var(--surface)', border: '1px solid ' + (item.tier !== 'STANDARD' ? tierColor + '55' : 'var(--border)'), borderRadius: 'var(--radius-md)', opacity: i === 0 ? 1 : 0.7 }}>
+                    <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, minWidth: '18px', textAlign: 'center', paddingTop: '2px' }}>{i + 1}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.songTitle}</p>
+                      <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '1px' }}>{item.requester}</p>
+                      {item.dedication && (
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          "{item.dedication}"
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-end', flexShrink: 0 }}>
+                      {tierLabel && (
+                        <span style={{ fontSize: '11px', color: tierColor, fontWeight: 700, background: tierColor + '18', padding: '2px 8px', borderRadius: '10px', border: '1px solid ' + tierColor + '33', whiteSpace: 'nowrap' }}>
+                          {tierIcon} {tierLabel}
+                        </span>
+                      )}
+                      {i === 0 && (
+                        <span style={{ fontSize: '11px', color: 'var(--neon)', fontWeight: 700, background: 'var(--neon-dim)', padding: '2px 8px', borderRadius: '10px', border: '1px solid rgba(0,255,136,0.15)', whiteSpace: 'nowrap' }}>Playing soon</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
       </div>
 
       <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }'}</style>
     </div>
   )
-}
+                    }

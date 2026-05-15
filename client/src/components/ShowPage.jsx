@@ -7,11 +7,12 @@ const Spinner = () => (
 
 const COIN_PRESETS = [5, 10, 25, 50]
 const COINS_KEY = 'nextup_coins'
+const FAN_TOKEN_KEY = 'nextup_fan_token'
 
 const TIER_META = {
-  STANDARD:  { icon: '🎵', label: 'Add to Queue',  color: 'var(--neon)',  bg: 'var(--neon-dim)',          border: 'rgba(0,255,136,0.3)' },
-  PRIORITY:  { icon: '⚡', label: 'Move Up',        color: '#f59e0b',      bg: 'rgba(245,158,11,0.10)',    border: 'rgba(245,158,11,0.4)' },
-  PLAY_NEXT: { icon: '🔥', label: 'Play Next',      color: '#ef4444',      bg: 'rgba(239,68,68,0.10)',     border: 'rgba(239,68,68,0.4)' },
+  STANDARD: { icon: '🎵', label: 'Add to Queue', color: 'var(--neon)', bg: 'var(--neon-dim)', border: 'rgba(0,255,136,0.3)' },
+  PRIORITY: { icon: '⚡', label: 'Move Up', color: '#f59e0b', bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.4)' },
+  PLAY_NEXT: { icon: '🔥', label: 'Play Next', color: '#ef4444', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.4)' },
 }
 
 function getStoredCoins() {
@@ -20,12 +21,25 @@ function getStoredCoins() {
 function storeCoins(n) {
   try { localStorage.setItem(COINS_KEY, String(Math.max(0, n))) } catch {}
 }
+function getStoredFanToken() {
+  try { return localStorage.getItem(FAN_TOKEN_KEY) || null } catch { return null }
+}
 
 export default function ShowPage() {
   const { slug } = useParams()
   const [params, setParams] = useSearchParams()
   const [show, setShow] = useState(null)
   const [coins, setCoins] = useState(getStoredCoins)
+  const [fanToken, setFanToken] = useState(getStoredFanToken)
+  const [fanEmail, setFanEmail] = useState('')
+  const [fanBalance, setFanBalance] = useState(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const effectiveCoins = (fanToken && fanBalance !== null) ? fanBalance : coins
   const [redeeming, setRedeeming] = useState(false)
   const [requester, setRequester] = useState('')
   const [selectedSong, setSelectedSong] = useState('')
@@ -45,7 +59,6 @@ export default function ShowPage() {
   const [playNextUsed, setPlayNextUsed] = useState(() => {
     try { return Math.max(0, parseInt(localStorage.getItem('nextup_playnext_' + slug) || '0', 10)) } catch { return 0 }
   })
-  // Shoutout state
   const [shoutoutMsg, setShoutoutMsg] = useState('')
   const [shoutoutName, setShoutoutName] = useState('')
   const [sendingShoutout, setSendingShoutout] = useState(false)
@@ -54,16 +67,34 @@ export default function ShowPage() {
 
   useEffect(() => { storeCoins(coins) }, [coins])
 
-  const fetchShow = async () => {
-    try {
-      const res = await fetch('/api/show/' + slug)
-      if (res.ok) setShow(await res.json())
-    } catch {}
+  useEffect(() => {
+    if (!fanToken) { setFanBalance(null); setFanEmail(''); return }
+    fetch('/api/fan/me', { headers: { Authorization: 'Bearer ' + fanToken } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) { setFanEmail(data.email); setFanBalance(data.coinBalance); }
+        else { localStorage.removeItem(FAN_TOKEN_KEY); setFanToken(null); }
+      }).catch(() => {})
+  }, [fanToken])
+
+  const updateCoins = (updater) => {
+    if (fanToken && fanBalance !== null) {
+      const newBalance = typeof updater === 'function' ? updater(fanBalance) : updater
+      const clamped = Math.max(0, newBalance)
+      setFanBalance(clamped)
+      fetch('/api/fan/balance', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + fanToken },
+        body: JSON.stringify({ coinBalance: clamped }),
+      }).catch(() => {})
+    } else { setCoins(updater) }
   }
 
+  const fetchShow = async () => {
+    try { const res = await fetch('/api/show/' + slug); if (res.ok) setShow(await res.json()) } catch {}
+  }
   useEffect(() => { fetchShow() }, [slug])
 
-  // Secure grant redemption after Stripe checkout (?grant=SESSION_ID)
   useEffect(() => {
     const grantId = params.get('grant')
     if (!grantId) return
@@ -71,48 +102,69 @@ export default function ShowPage() {
     let attempts = 0
     const tryRedeem = async () => {
       try {
-        const res = await fetch('/api/tokens/redeem/' + grantId)
+        const headers = {}
+        if (fanToken) headers['Authorization'] = 'Bearer ' + fanToken
+        const res = await fetch('/api/tokens/redeem/' + grantId, { headers })
         const data = await res.json()
         if (res.ok) {
-          setCoins(c => c + data.tokens)
+          if (fanToken && data.fanBalance !== null && data.fanBalance !== undefined) {
+            setFanBalance(data.fanBalance)
+          } else { updateCoins(c => c + data.tokens) }
           setRedeeming(false)
-          const next = new URLSearchParams(params)
-          next.delete('grant')
+          const next = new URLSearchParams(params); next.delete('grant')
           setParams(next, { replace: true })
         } else if (res.status === 409) {
           setRedeeming(false)
-          const next = new URLSearchParams(params)
-          next.delete('grant')
+          const next = new URLSearchParams(params); next.delete('grant')
           setParams(next, { replace: true })
-        } else if (res.status === 404 && attempts < 8) {
-          attempts++
-          setTimeout(tryRedeem, 1500)
-        } else {
-          setError('Redemption failed — your payment was received. Contact the performer for help.')
-          setRedeeming(false)
-        }
+        } else if (res.status === 404 && attempts < 8) { attempts++; setTimeout(tryRedeem, 1500)
+        } else { setError('Redemption failed — your payment was received. Contact the performer for help.'); setRedeeming(false) }
       } catch {
         if (attempts < 8) { attempts++; setTimeout(tryRedeem, 1500) }
         else { setError('Network error during redemption.'); setRedeeming(false) }
       }
     }
     tryRedeem()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // WebSocket — fan page gets live queue updates
   useEffect(() => {
     if (!slug) return
     const wsBase = window.location.origin.replace(/^http/, 'ws')
     wsRef.current = new WebSocket(wsBase + '/ws/' + slug)
     wsRef.current.onmessage = (evt) => {
-      try {
-        const msg = JSON.parse(evt.data)
-        if (msg.type === 'QUEUE_UPDATE' || !msg.type) fetchShow()
-      } catch { fetchShow() }
+      try { const msg = JSON.parse(evt.data); if (msg.type === 'QUEUE_UPDATE' || !msg.type) fetchShow() } catch { fetchShow() }
     }
     return () => wsRef.current?.close()
   }, [slug])
+
+  const handleFanAuth = async (e) => {
+    e.preventDefault(); setAuthLoading(true); setAuthError('')
+    try {
+      const endpoint = authMode === 'signup' ? '/api/fan/register' : '/api/fan/login'
+      const res = await fetch(endpoint, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail, password: authPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Auth failed')
+      localStorage.setItem(FAN_TOKEN_KEY, data.token)
+      setFanToken(data.token); setFanEmail(data.fan.email); setFanBalance(data.fan.coinBalance)
+      if (coins > 0 && data.fan.coinBalance === 0) {
+        const newBal = coins; setFanBalance(newBal); setCoins(0)
+        fetch('/api/fan/balance', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.token },
+          body: JSON.stringify({ coinBalance: newBal }),
+        }).catch(() => {})
+      }
+      setShowAuthModal(false); setAuthEmail(''); setAuthPassword('')
+    } catch (err) { setAuthError(err.message) }
+    finally { setAuthLoading(false) }
+  }
+
+  const handleFanLogout = () => {
+    localStorage.removeItem(FAN_TOKEN_KEY); setFanToken(null); setFanEmail(''); setFanBalance(null)
+  }
 
   const buyCoins = async (amount) => {
     if (!show?.stripeEnabled) return setError('Payments are not available for this show right now.')
@@ -121,9 +173,7 @@ export default function ShowPage() {
     setBuying(true); setError('')
     try {
       const res = await fetch('/api/stripe/checkout/' + slug, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ coins: n })
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coins: n })
       })
       const data = await res.json()
       if (data.url) window.location.href = data.url
@@ -133,57 +183,29 @@ export default function ShowPage() {
   }
 
   const handleRequest = async (tier) => {
-    const cost = show?.queueCoinCost || 1
-    const jumpCost = show?.queueJumpCost || 5
-    const playNextCost = show?.playNextCost || 15
-    const maxJumps = show?.maxJumpsPerSession || 2
+    const cost = show?.queueCoinCost || 1; const jumpCost = show?.queueJumpCost || 5
+    const playNextCost = show?.playNextCost || 15; const maxJumps = show?.maxJumpsPerSession || 2
     const maxPlayNext = show?.maxPlayNextPerSession || 1
-
     let deductCost = cost
     if (tier === 'PRIORITY') deductCost = jumpCost
     if (tier === 'PLAY_NEXT') deductCost = playNextCost
-
-    if (coins < deductCost) {
-      return setError('You need ' + deductCost + ' coin' + (deductCost !== 1 ? 's' : '') + ' for this option')
-    }
-    if (tier === 'PRIORITY' && jumpsUsed >= maxJumps) {
-      return setError("You've reached the Move Up limit for this show (" + maxJumps + '/' + maxJumps + ')')
-    }
-    if (tier === 'PLAY_NEXT' && playNextUsed >= maxPlayNext) {
-      return setError("You've already used Play Next for this show (" + maxPlayNext + '/' + maxPlayNext + ')')
-    }
-
+    if (effectiveCoins < deductCost) return setError('You need ' + deductCost + ' coin' + (deductCost !== 1 ? 's' : '') + ' for this option')
+    if (tier === 'PRIORITY' && jumpsUsed >= maxJumps) return setError("You've reached the Move Up limit for this show (" + maxJumps + '/' + maxJumps + ')')
+    if (tier === 'PLAY_NEXT' && playNextUsed >= maxPlayNext) return setError("You've already used Play Next for this show (" + maxPlayNext + '/' + maxPlayNext + ')')
     const title = customSong.trim() || selectedSong
     if (!title) return setError('Please select or enter a song')
     setSubmitting(true); setError('')
     try {
       const res = await fetch('/api/queue/' + slug, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          songTitle: title,
-          requester: requester.trim() || 'Anonymous',
-          tier,
-          dedication: dedication.trim().slice(0, 60) || undefined,
-        })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ songTitle: title, requester: requester.trim() || 'Anonymous', tier, dedication: dedication.trim().slice(0, 60) || undefined })
       })
       const data = await res.json()
-      if (res.status === 429) {
-        setError(data.error || "You've reached the limit for this show")
-        return
-      }
+      if (res.status === 429) { setError(data.error || "You've reached the limit for this show"); return }
       if (!res.ok) throw new Error(data.error)
-      setCoins(c => c - deductCost)
-      if (tier === 'PRIORITY') {
-        const next = jumpsUsed + 1
-        setJumpsUsed(next)
-        try { localStorage.setItem('nextup_jumps_' + slug, String(next)) } catch {}
-      }
-      if (tier === 'PLAY_NEXT') {
-        const next = playNextUsed + 1
-        setPlayNextUsed(next)
-        try { localStorage.setItem('nextup_playnext_' + slug, String(next)) } catch {}
-      }
+      updateCoins(c => c - deductCost)
+      if (tier === 'PRIORITY') { const next = jumpsUsed + 1; setJumpsUsed(next); try { localStorage.setItem('nextup_jumps_' + slug, String(next)) } catch {} }
+      if (tier === 'PLAY_NEXT') { const next = playNextUsed + 1; setPlayNextUsed(next); try { localStorage.setItem('nextup_playnext_' + slug, String(next)) } catch {} }
       setSelectedSong(''); setCustomSong(''); setDedication('')
       setSuccess(true); setTimeout(() => setSuccess(false), 5000)
     } catch (err) { setError(err.message) }
@@ -193,23 +215,16 @@ export default function ShowPage() {
   const handleShoutout = async () => {
     if (!shoutoutMsg.trim()) return setError('Please enter a shoutout message')
     const shoutoutCost = show?.shoutoutCost || 10
-    if (coins < shoutoutCost) {
-      return setError('You need ' + shoutoutCost + ' coins to send a shoutout')
-    }
+    if (effectiveCoins < shoutoutCost) return setError('You need ' + shoutoutCost + ' coins to send a shoutout')
     setSendingShoutout(true); setError('')
     try {
       const res = await fetch('/api/shoutout/' + slug, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: shoutoutMsg.trim(),
-          fromName: shoutoutName.trim() || 'Anonymous',
-        })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: shoutoutMsg.trim(), fromName: shoutoutName.trim() || 'Anonymous' })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setCoins(c => c - shoutoutCost)
-      setShoutoutMsg(''); setShoutoutName('')
+      updateCoins(c => c - shoutoutCost); setShoutoutMsg(''); setShoutoutName('')
       setShoutoutSuccess(true); setTimeout(() => setShoutoutSuccess(false), 5000)
     } catch (err) { setError(err.message) }
     finally { setSendingShoutout(false) }
@@ -217,98 +232,105 @@ export default function ShowPage() {
 
   if (!show) return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', background: 'var(--bg)' }}>
-      <Spinner />
-      <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Loading show...</p>
+      <Spinner /><p style={{ color: 'var(--muted)', fontSize: '14px' }}>Loading show...</p>
       <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
     </div>
   )
 
-  const cost = show.queueCoinCost || 1
-  const jumpCost = show.queueJumpCost || 5
-  const playNextCost = show.playNextCost || 15
-  const maxJumps = show.maxJumpsPerSession || 2
-  const maxPlayNext = show.maxPlayNextPerSession || 1
-  const shoutoutCost = show.shoutoutCost || 10
-  const hasEnough = coins >= cost
-  const liveQueue = show.queue || []
-
-  // Genre filter logic
+  const cost = show.queueCoinCost || 1; const jumpCost = show.queueJumpCost || 5
+  const playNextCost = show.playNextCost || 15; const maxJumps = show.maxJumpsPerSession || 2
+  const maxPlayNext = show.maxPlayNextPerSession || 1; const shoutoutCost = show.shoutoutCost || 10
+  const hasEnough = effectiveCoins >= cost; const liveQueue = show.queue || []
   const availableGenres = ['All', ...[...new Set((show.songs || []).map(s => s.genre).filter(Boolean))].sort()]
   let filteredSongs = (show.songs || []).filter(s => genreFilter === 'All' || s.genre === genreFilter)
   if (sortAZ) filteredSongs = [...filteredSongs].sort((a, b) => a.title.localeCompare(b.title))
 
   const tierButtonStyle = (tier, enabled) => {
     const meta = TIER_META[tier]
-    return {
-      padding: '12px 8px',
-      fontSize: '14px',
-      borderRadius: '10px',
-      background: enabled ? meta.bg : 'var(--surface2)',
-      border: '1.5px solid ' + (enabled ? meta.border : 'var(--border)'),
-      color: enabled ? meta.color : 'var(--muted)',
-      fontWeight: 700,
-      cursor: enabled ? 'pointer' : 'not-allowed',
-      transition: 'all 0.15s',
-      fontFamily: 'inherit',
-      flex: 1,
-      textAlign: 'center',
-      lineHeight: '1.3',
-    }
+    return { padding: '12px 8px', fontSize: '14px', borderRadius: '10px',
+      background: enabled ? meta.bg : 'var(--surface2)', border: '1.5px solid ' + (enabled ? meta.border : 'var(--border)'),
+      color: enabled ? meta.color : 'var(--muted)', fontWeight: 700, cursor: enabled ? 'pointer' : 'not-allowed',
+      transition: 'all 0.15s', fontFamily: 'inherit', flex: 1, textAlign: 'center', lineHeight: '1.3' }
   }
 
-  const canStandard = coins >= cost
-  const canPriority = coins >= jumpCost && jumpsUsed < maxJumps
-  const canPlayNext = coins >= playNextCost && playNextUsed < maxPlayNext
-  const canShoutout = coins >= shoutoutCost
+  const canStandard = effectiveCoins >= cost; const canPriority = effectiveCoins >= jumpCost && jumpsUsed < maxJumps
+  const canPlayNext = effectiveCoins >= playNextCost && playNextUsed < maxPlayNext; const canShoutout = effectiveCoins >= shoutoutCost
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
 
-      {/* Hero */}
-      <div style={{ background: 'radial-gradient(ellipse 120% 80% at 50% -5%, rgba(0,255,136,0.1) 0%, transparent 65%)', borderBottom: '1px solid var(--border)', padding: '48px 20px 36px', textAlign: 'center' }}>
+      {showAuthModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAuthModal(false) }}>
+          <div style={{ background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: '16px', padding: '28px 24px', width: '100%', maxWidth: '380px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontWeight: 800, fontSize: '20px' }}>{authMode === 'login' ? 'Sign in' : 'Create account'}</h2>
+              <button onClick={() => setShowAuthModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', padding: '4px 8px', lineHeight: 1 }}>x</button>
+            </div>
+            <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '20px' }}>
+              {authMode === 'login' ? 'Sign in to keep your coin balance across devices.' : 'Create a free account so your coins never disappear.'}
+            </p>
+            <form onSubmit={handleFanAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <input type="email" placeholder="Email address" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required autoFocus />
+              <input type="password" placeholder={authMode === 'signup' ? 'Password (min 6 chars)' : 'Password'} value={authPassword} onChange={e => setAuthPassword(e.target.value)} required />
+              {authError && (
+                <div style={{ background: 'rgba(255,91,91,0.08)', border: '1px solid rgba(255,91,91,0.25)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#ff5b5b' }}>{authError}</div>
+              )}
+              <button type="submit" className="btn-primary" disabled={authLoading} style={{ padding: '13px', fontSize: '15px', marginTop: '4px' }}>
+                {authLoading ? '...' : authMode === 'login' ? 'Sign in' : 'Create account'}
+              </button>
+            </form>
+            <div style={{ textAlign: 'center', marginTop: '16px' }}>
+              <button onClick={() => { setAuthMode(m => m === 'login' ? 'signup' : 'login'); setAuthError('') }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '13px', cursor: 'pointer', padding: 0 }}>
+                {authMode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ background: 'radial-gradient(ellipse 120% 80% at 50% -5%, rgba(0,255,136,0.1) 0%, transparent 65%)', borderBottom: '1px solid var(--border)', padding: '48px 20px 36px', textAlign: 'center', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: '16px', right: '16px' }}>
+          {fanToken ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{fanEmail}</span>
+              <button onClick={handleFanLogout} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--muted)', fontSize: '11px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>Sign out</button>
+            </div>
+          ) : (
+            <button onClick={() => { setShowAuthModal(true); setAuthError('') }}
+              style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--muted)', fontSize: '12px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+              Sign in
+            </button>
+          )}
+        </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', marginBottom: '16px', padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '20px' }}>
           <div style={{ width: '18px', height: '18px', background: 'var(--neon)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', flexShrink: 0 }}>🎵</div>
           <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Next Up</span>
         </div>
-        <h1 style={{ fontSize: '36px', fontWeight: 900, color: 'var(--text)', letterSpacing: '-0.8px', lineHeight: '1.1', margin: '0 auto 16px', maxWidth: '480px' }}>
-          {show.displayName}
-        </h1>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: coins > 0 ? 'rgba(0,255,136,0.08)' : 'var(--surface)', border: '1.5px solid ' + (coins > 0 ? 'rgba(0,255,136,0.3)' : 'var(--border)'), borderRadius: '24px', padding: '8px 18px', fontSize: '14px', fontWeight: 700, color: coins > 0 ? 'var(--neon)' : 'var(--muted)', transition: 'all 0.3s ease' }}>
-          {redeeming ? '⏳ Adding coins...' : '🪙 ' + coins + ' coin' + (coins !== 1 ? 's' : '')}
+        <h1 style={{ fontSize: '36px', fontWeight: 900, color: 'var(--text)', letterSpacing: '-0.8px', lineHeight: '1.1', margin: '0 auto 16px', maxWidth: '480px' }}>{show.displayName}</h1>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: effectiveCoins > 0 ? 'rgba(0,255,136,0.08)' : 'var(--surface)', border: '1.5px solid ' + (effectiveCoins > 0 ? 'rgba(0,255,136,0.3)' : 'var(--border)'), borderRadius: '24px', padding: '8px 18px', fontSize: '14px', fontWeight: 700, color: effectiveCoins > 0 ? 'var(--neon)' : 'var(--muted)', transition: 'all 0.3s ease' }}>
+          {redeeming ? '⏳ Adding coins...' : '🪙 ' + effectiveCoins + ' coin' + (effectiveCoins !== 1 ? 's' : '')}
         </div>
+        {fanToken
+          ? <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '8px' }}>💾 Balance saved to your account</p>
+          : <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '8px' }}>
+              <button onClick={() => { setShowAuthModal(true); setAuthError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--neon)', fontSize: '12px', cursor: 'pointer', padding: 0, fontFamily: 'inherit', textDecoration: 'underline', textUnderlineOffset: '2px' }}>Sign in</button>
+              {' '}to save coins across devices
+            </p>
+        }
       </div>
-
       <div style={{ maxWidth: '540px', margin: '0 auto', padding: '28px 20px 60px' }}>
-
-        {/* Alerts */}
-        {redeeming && (
-          <div style={{ background: 'rgba(0,255,136,0.04)', border: '1.5px solid rgba(0,255,136,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '14px', textAlign: 'center' }}>
-            <p style={{ color: 'var(--neon)', fontWeight: 600, fontSize: '14px' }}>⏳ Confirming your payment...</p>
-          </div>
-        )}
-        {success && (
-          <div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
-            <p style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '16px' }}>🎵 Request sent!</p>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>You're in the queue!</p>
-          </div>
-        )}
-        {shoutoutSuccess && (
-          <div style={{ background: 'rgba(139,92,246,0.08)', border: '1.5px solid rgba(139,92,246,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
-            <p style={{ color: '#a78bfa', fontWeight: 700, fontSize: '16px' }}>📣 Shoutout sent!</p>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>The performer will see your message!</p>
-          </div>
-        )}
+        {redeeming && (<div style={{ background: 'rgba(0,255,136,0.04)', border: '1.5px solid rgba(0,255,136,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '14px', textAlign: 'center' }}><p style={{ color: 'var(--neon)', fontWeight: 600, fontSize: '14px' }}>⏳ Confirming your payment...</p></div>)}
+        {success && (<div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '16px' }}>🎵 Request sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>You're in the queue!</p></div>)}
+        {shoutoutSuccess && (<div style={{ background: 'rgba(139,92,246,0.08)', border: '1.5px solid rgba(139,92,246,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: '#a78bfa', fontWeight: 700, fontSize: '16px' }}>📣 Shoutout sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>The performer will see your message!</p></div>)}
         {error && <div className="error" style={{ marginBottom: '14px' }}>{error}</div>}
 
-        {/* BUY COINS PANEL */}
         {buyMode ? (
           <div className="card" style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div>
-                <h2 style={{ fontWeight: 800, fontSize: '18px', marginBottom: '3px' }}>Get Coins</h2>
-                <p style={{ color: 'var(--muted)', fontSize: '13px' }}>🪙 $1 per coin · no expiry</p>
-              </div>
-              <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>x</button>
+              <div><h2 style={{ fontWeight: 800, fontSize: '18px', marginBottom: '3px' }}>Get Coins</h2><p style={{ color: 'var(--muted)', fontSize: '13px' }}>🪙 $1 per coin · no expiry</p></div>
+              <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
               {COIN_PRESETS.map(n => (
@@ -317,49 +339,15 @@ export default function ShowPage() {
                   onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(0,255,136,0.4)'; e.currentTarget.style.background='rgba(0,255,136,0.04)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)'; }}>
                   <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--neon)' }}>🪙 {n}</div>
-                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>class n extends HTMLElement{#e;#t;#s=()=>Promise.resolve([]);#o;#a;hasScopes=!1;connectedCallback(){this.#e=parseInt(this.getAttribute("data-max-custom-scopes")||"10",10)}initialize(e,t,s,o){this.#t=e,this.#s=t,this.#o=s,this.#a=o}mode(){return this.createCustomScopeForm.hidden?"manage":"create"}customScopesSubmit(e){"manage"===this.mode()?this.create(""):this.saveCustomScope(e)}customScopesCancel(){"manage"!==this.mode()&&this.hasScopes?this.setMode("manage"):this.customScopesModalDialog.close()}setMode(e){this.hasScopes&&"manage"===e?(this.createCustomScopeForm.hidden=!0,this.manageCustomScopesForm.hidden=!1,this.#i("Saved searches","Create saved search")):(this.createCustomScopeForm.hidden=!1,this.manageCustomScopesForm.hidden=!0)}#i(e,t){this.customScopesSubmitButton.textContent=t,this.customScopesModalDialog.getElementsByTagName("h1")[0].textContent=e}#n(e){let t=e&&(this.#t?.len()||0)>=this.#e;t?this.customScopesModalDialogFlash.innerHTML=`
-        <div class="flash flash-warn tmp-mb-3">
-          Limit of 10 saved searches reached. Please delete an existing saved search before creating a new one.
-        </div>
-      `:this.customScopesModalDialogFlash.textContent="",this.customScopesSubmitButton.disabled=t}async saveCustomScope(e){e.preventDefault();let t=e.target.form;if(!t.checkValidity())return void t.reportValidity();if((await fetch(t.action,{method:"POST",body:new FormData(t)})).ok){this.#t?.clear();let e=await this.#s();this.setScopes(e),t.reset(),this.setMode("manage")}}async show(){let e=await this.#s();this.setScopes(e),this.customScopesModalDialog instanceof HTMLDialogElement?this.customScopesModalDialog.showModal():this.customScopesModalDialog.show(),this.setMode("manage")}openCustomScopesDialog(e){this.customScopesModalDialog instanceof HTMLDialogElement?this.customScopesModalDialog.showModal():this.customScopesModalDialog.show(),e.stopPropagation()}async editCustomScope(e){e.stopPropagation(),e.preventDefault();let t=e.target.getAttribute("data-id");t||(t=e.target.closest("button")?.getAttribute("data-id")||null);let s=await this.#l(t);t&&s&&(this.#i("Update saved search","Update saved search"),this.customScopesIdField.value=s.id,this.customScopesNameField.value=s.name,this.customScopesQueryField.value=s.query,this.#n(!1),this.setMode("create"))}create(e){this.#i("Create saved search","Create saved search"),this.customScopesIdField.value="",this.customScopesNameField.value="",this.customScopesQueryField.value=e,this.customScopesModalDialog instanceof HTMLDialogElement?this.customScopesModalDialog.showModal():this.customScopesModalDialog.show(),this.#n(!0),this.setMode("create")}async #l(e){let t=this.#t?.get();return void 0===t&&(t=await this.#s()),t.find(t=>t.id.toString()===e)}async deleteCustomScope(e){let t=this.#o,s=e.target.getAttribute("data-id");if(s||(s=e.target.closest("button")?.getAttribute("data-id")||null),!t||!s)return;let o=new FormData;if(o.append("id",s),o.append("_method","delete"),(await fetch(t,{method:"POST",headers:{"Scoped-CSRF-Token":this.#a},body:o})).ok){let e=await this.#s();this.setScopes(e)}this.#t?.clear(),this.setMode("manage")}setScopes(e){this.hasScopes=e.length>0;let t=e.map(e=>{let t,s;return(0,i.qy)`
-        <div class="d-flex py-1">
-          <div>
-            <div class="text-bold">${e.name}</div>
-            <div class="text-small color-fg-muted">${e.query}</div>
-          </div>
-          <div class="flex-1"></div>
-          <button
-            type="button"
-            class="btn btn-octicon"
-            data-action="click:qbsearch-input#editCustomScope"
-            data-id="${e.id}"
-            aria-label="Edit saved search"
-          >
-            ${t=document.getElementById("pencil-icon"),(0,i.qy)([t?.innerHTML])}
-          </button>
-          <button
-            type="button"
-            class="btn btn-octicon btn-danger"
-            data-action="click:custom-scopes#deleteCustomScope"
-            data-id="${e.id}"
-            aria-label="Delete saved search"
-          >
-            ${s=document.getElementById("trash-icon"),(0,i.qy)([s?.innerHTML])}
-          </button>
-        </div>
-      `});(0,i.XX)((0,i.qy)`${t}`,this.list)}}.00</div>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>${'$'}{n}.00</div>
                 </button>
               ))}
             </div>
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Custom amount</label>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="number" min="1" max="999" placeholder="How many coins?" value={customCoins}
-                  onChange={e => setCustomCoins(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && customCoins && buyCoins(customCoins)}
-                  style={{ flex: 1 }} />
-                <button onClick={() => buyCoins(customCoins)} className="btn-primary"
-                  disabled={!customCoins || buying} style={{ flexShrink: 0, padding: '0 18px', whiteSpace: 'nowrap' }}>
+                <input type="number" min="1" max="999" placeholder="How many coins?" value={customCoins} onChange={e => setCustomCoins(e.target.value)} onKeyDown={e => e.key === 'Enter' && customCoins && buyCoins(customCoins)} style={{ flex: 1 }} />
+                <button onClick={() => buyCoins(customCoins)} className="btn-primary" disabled={!customCoins || buying} style={{ flexShrink: 0, padding: '0 18px', whiteSpace: 'nowrap' }}>
                   {buying ? '...' : (customCoins && parseInt(customCoins) > 0 ? 'Pay $' + parseInt(customCoins) : 'Buy')}
                 </button>
               </div>
@@ -367,215 +355,58 @@ export default function ShowPage() {
           </div>
         ) : (
           <>
-            {/* REQUEST FORM or GET COINS CTA */}
             {hasEnough ? (
               <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(0,255,136,0.15)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                  <div>
-                    <h2 style={{ fontWeight: 800, fontSize: '18px' }}>Request a Song</h2>
+                  <div><h2 style={{ fontWeight: 800, fontSize: '18px' }}>Request a Song</h2>
                     <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>
-                      <span style={{ color: 'var(--neon)', fontWeight: 700 }}>🎵 {cost}</span>
-                      {' · '}
-                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚡ {jumpCost}</span>
-                      {' · '}
+                      <span style={{ color: 'var(--neon)', fontWeight: 700 }}>🎵 {cost}</span>{" · "}
+                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚡ {jumpCost}</span>{" · "}
                       <span style={{ color: '#ef4444', fontWeight: 700 }}>🔥 {playNextCost}</span>
                     </p>
                   </div>
-                  <span style={{ background: 'var(--neon-dim)', color: 'var(--neon)', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(0,255,136,0.2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    🪙 {coins} left
-                  </span>
+                  <span style={{ background: 'var(--neon-dim)', color: 'var(--neon)', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(0,255,136,0.2)', whiteSpace: 'nowrap', flexShrink: 0 }}>🪙 {effectiveCoins} left</span>
                 </div>
-
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <input placeholder="Your name (optional)" value={requester} onChange={e => setRequester(e.target.value)} />
-
-                  {availableGenres.length > 2 && (
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                          {availableGenres.map(g => (
-                            <button key={g} onClick={() => setGenreFilter(g)}
-                              style={{
-                                padding: '4px 11px', fontSize: '12px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit',
-                                background: genreFilter === g ? 'var(--neon-dim)' : 'var(--surface2)',
-                                border: '1px solid ' + (genreFilter === g ? 'rgba(0,255,136,0.3)' : 'var(--border)'),
-                                color: genreFilter === g ? 'var(--neon)' : 'var(--muted)',
-                                transition: 'all 0.15s',
-                              }}>
-                              {g}
-                            </button>
-                          ))}
-                        </div>
-                        <button onClick={() => setSortAZ(v => !v)}
-                          style={{
-                            padding: '4px 10px', fontSize: '11px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, marginLeft: '6px',
-                            background: sortAZ ? 'rgba(139,92,246,0.12)' : 'var(--surface2)',
-                            border: '1px solid ' + (sortAZ ? 'rgba(139,92,246,0.4)' : 'var(--border)'),
-                            color: sortAZ ? '#a78bfa' : 'var(--muted)',
-                            transition: 'all 0.15s',
-                          }}>
-                          A-Z
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {filteredSongs.length > 0 && (
-                    <select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}>
-                      <option value="">Pick from setlist...</option>
-                      {filteredSongs.map(s => (
-                        <option key={s.id} value={s.title}>{s.title}{s.artist ? ' - ' + s.artist : ''}</option>
-                      ))}
-                    </select>
-                  )}
-
-                  <input placeholder={show.songs?.length > 0 ? 'Or type any song...' : 'Song title...'}
-                    value={customSong} onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }} />
-
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      placeholder="Dedicate this song to someone? (optional)"
-                      value={dedication}
-                      onChange={e => setDedication(e.target.value.slice(0, 60))}
-                      style={{ paddingRight: '48px' }}
-                    />
-                    {dedication.length > 0 && (
-                      <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: dedication.length >= 55 ? '#ef4444' : 'var(--muted)', fontWeight: 600, pointerEvents: 'none' }}>
-                        {60 - dedication.length}
-                      </span>
-                    )}
-                  </div>
-
+                  {availableGenres.length > 2 && (<div><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}><div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>{availableGenres.map(g => (<button key={g} onClick={() => setGenreFilter(g)} style={{ padding: '4px 11px', fontSize: '12px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', background: genreFilter === g ? 'var(--neon-dim)' : 'var(--surface2)', border: '1px solid ' + (genreFilter === g ? 'rgba(0,255,136,0.3)' : 'var(--border)'), color: genreFilter === g ? 'var(--neon)' : 'var(--muted)', transition: 'all 0.15s' }}>{g}</button>))}</div><button onClick={() => setSortAZ(v => !v)} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, marginLeft: '6px', background: sortAZ ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1px solid ' + (sortAZ ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: sortAZ ? '#a78bfa' : 'var(--muted)', transition: 'all 0.15s' }}>A-Z</button></div></div>)}
+                  {filteredSongs.length > 0 && (<select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}><option value="">Pick from setlist...</option>{filteredSongs.map(s => (<option key={s.id} value={s.title}>{s.title}{s.artist ? ' - ' + s.artist : ''}</option>))}</select>)}
+                  <input placeholder={show.songs?.length > 0 ? 'Or type any song...' : 'Song title...'} value={customSong} onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }} />
+                  <div style={{ position: 'relative' }}><input placeholder="Dedicate this song to someone? (optional)" value={dedication} onChange={e => setDedication(e.target.value.slice(0, 60))} style={{ paddingRight: '48px' }} />{dedication.length > 0 && (<span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: dedication.length >= 55 ? '#ef4444' : 'var(--muted)', fontWeight: 600, pointerEvents: 'none' }}>{60 - dedication.length}</span>)}</div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      onClick={() => handleRequest('STANDARD')}
-                      disabled={submitting || !canStandard}
-                      style={tierButtonStyle('STANDARD', canStandard && !submitting)}
-                    >
-                      <div style={{ fontSize: '18px', marginBottom: '2px' }}>🎵</div>
-                      <div style={{ fontSize: '12px' }}>Add to Queue</div>
-                      <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>🪙 {cost}</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRequest('PRIORITY')}
-                      disabled={submitting || !canPriority}
-                      style={tierButtonStyle('PRIORITY', canPriority && !submitting)}
-                    >
-                      <div style={{ fontSize: '18px', marginBottom: '2px' }}>⚡</div>
-                      <div style={{ fontSize: '12px' }}>Move Up</div>
-                      <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
-                        {jumpsUsed >= maxJumps ? 'Limit reached' : '🪙 ' + jumpCost + ' (' + (maxJumps - jumpsUsed) + ' left)'}
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRequest('PLAY_NEXT')}
-                      disabled={submitting || !canPlayNext}
-                      style={tierButtonStyle('PLAY_NEXT', canPlayNext && !submitting)}
-                    >
-                      <div style={{ fontSize: '18px', marginBottom: '2px' }}>🔥</div>
-                      <div style={{ fontSize: '12px' }}>Play Next</div>
-                      <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
-                        {playNextUsed >= maxPlayNext ? 'Limit reached' : '🪙 ' + playNextCost}
-                      </div>
-                    </button>
+                    <button type="button" onClick={() => handleRequest('STANDARD')} disabled={submitting || !canStandard} style={tierButtonStyle('STANDARD', canStandard && !submitting)}><div style={{ fontSize: '18px', marginBottom: '2px' }}>🎵</div><div style={{ fontSize: '12px' }}>Add to Queue</div><div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>🪙 {cost}</div></button>
+                    <button type="button" onClick={() => handleRequest('PRIORITY')} disabled={submitting || !canPriority} style={tierButtonStyle('PRIORITY', canPriority && !submitting)}><div style={{ fontSize: '18px', marginBottom: '2px' }}>⚡</div><div style={{ fontSize: '12px' }}>Move Up</div><div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>{jumpsUsed >= maxJumps ? 'Limit reached' : '🪙 ' + jumpCost + ' (' + (maxJumps - jumpsUsed) + ' left)'}</div></button>
+                    <button type="button" onClick={() => handleRequest('PLAY_NEXT')} disabled={submitting || !canPlayNext} style={tierButtonStyle('PLAY_NEXT', canPlayNext && !submitting)}><div style={{ fontSize: '18px', marginBottom: '2px' }}>🔥</div><div style={{ fontSize: '12px' }}>Play Next</div><div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>{playNextUsed >= maxPlayNext ? 'Limit reached' : '🪙 ' + playNextCost}</div></button>
                   </div>
-
-                  {submitting && (
-                    <div style={{ textAlign: 'center', padding: '8px' }}>
-                      <Spinner />
-                    </div>
-                  )}
+                  {submitting && (<div style={{ textAlign: 'center', padding: '8px' }}><Spinner /></div>)}
                 </div>
-
-                <div style={{ textAlign: 'center', marginTop: '12px' }}>
-                  <button onClick={() => { setBuyMode(true); setError('') }}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>
-                    + Get more coins
-                  </button>
-                </div>
+                <div style={{ textAlign: 'center', marginTop: '12px' }}><button onClick={() => { setBuyMode(true); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>
               </div>
             ) : (
               <div className="card" style={{ marginBottom: '24px', textAlign: 'center', padding: '36px 24px', border: '1.5px dashed var(--border)' }}>
                 <div style={{ fontSize: '44px', marginBottom: '12px' }}>🪙</div>
-                <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '6px' }}>
-                  {coins === 0 ? 'No coins yet' : 'Need ' + (cost - coins) + ' more coin' + (cost - coins !== 1 ? 's' : '')}
-                </p>
-                <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '22px' }}>
-                  {cost === 1 ? 'Get coins to request songs · $1 each' : cost + ' coins needed per request · $1 each'}
-                </p>
-                <button onClick={() => { setBuyMode(true); setError('') }} className="btn-primary"
-                  style={{ padding: '13px 32px', fontSize: '15px' }}>
-                  🪙 Get Coins
-                </button>
+                <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '6px' }}>{effectiveCoins === 0 ? 'No coins yet' : 'Need ' + (cost - effectiveCoins) + ' more coin' + (cost - effectiveCoins !== 1 ? 's' : '')}</p>
+                <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '22px' }}>{cost === 1 ? 'Get coins to request songs · $1 each' : cost + ' coins needed per request · $1 each'}</p>
+                <button onClick={() => { setBuyMode(true); setError('') }} className="btn-primary" style={{ padding: '13px 32px', fontSize: '15px' }}>🪙 Get Coins</button>
               </div>
             )}
-
-            {/* SHOUTOUT SECTION */}
             <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(139,92,246,0.15)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
-                <div>
-                  <h2 style={{ fontWeight: 800, fontSize: '17px' }}>📣 Send a Shoutout</h2>
-                  <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>
-                    Send a message to the performer · <span style={{ color: '#a78bfa', fontWeight: 700 }}>🪙 {shoutoutCost} coins</span>
-                  </p>
-                </div>
-                {canShoutout && (
-                  <span style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.25)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    🪙 {coins} left
-                  </span>
-                )}
+                <div><h2 style={{ fontWeight: 800, fontSize: '17px' }}>📣 Send a Shoutout</h2><p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>Send a message to the performer · <span style={{ color: '#a78bfa', fontWeight: 700 }}>🪙 {shoutoutCost} coins</span></p></div>
+                {canShoutout && (<span style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.25)', whiteSpace: 'nowrap', flexShrink: 0 }}>🪙 {effectiveCoins} left</span>)}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <input
-                  placeholder="Your name (optional)"
-                  value={shoutoutName}
-                  onChange={e => setShoutoutName(e.target.value)}
-                />
-                <textarea
-                  placeholder="Your message to the performer..."
-                  value={shoutoutMsg}
-                  onChange={e => setShoutoutMsg(e.target.value.slice(0, 200))}
-                  rows={3}
-                  style={{ resize: 'vertical', minHeight: '72px' }}
-                />
-                <button
-                  type="button"
-                  onClick={handleShoutout}
-                  disabled={sendingShoutout || !shoutoutMsg.trim() || !canShoutout}
-                  style={{
-                    padding: '12px',
-                    fontSize: '14px',
-                    borderRadius: '10px',
-                    background: (canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.12)' : 'var(--surface2)',
-                    border: '1.5px solid ' + ((canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.4)' : 'var(--border)'),
-                    color: (canShoutout && shoutoutMsg.trim()) ? '#a78bfa' : 'var(--muted)',
-                    fontWeight: 700,
-                    cursor: (canShoutout && shoutoutMsg.trim()) ? 'pointer' : 'not-allowed',
-                    transition: 'all 0.15s',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {sendingShoutout ? '⏳ Sending...' : !canShoutout
-                    ? ('Need ' + shoutoutCost + ' coins · 🪙 ' + (shoutoutCost - coins) + ' more')
-                    : ('📣 Send Shoutout · 🪙 ' + shoutoutCost + ' coins')}
+                <input placeholder="Your name (optional)" value={shoutoutName} onChange={e => setShoutoutName(e.target.value)} />
+                <textarea placeholder="Your message to the performer..." value={shoutoutMsg} onChange={e => setShoutoutMsg(e.target.value.slice(0, 120))} rows={3} style={{ resize: 'vertical', minHeight: '72px' }} />
+                <button type="button" onClick={handleShoutout} disabled={sendingShoutout || !shoutoutMsg.trim() || !canShoutout} style={{ padding: '12px', fontSize: '14px', borderRadius: '10px', background: (canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1.5px solid ' + ((canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: (canShoutout && shoutoutMsg.trim()) ? '#a78bfa' : 'var(--muted)', fontWeight: 700, cursor: (canShoutout && shoutoutMsg.trim()) ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
+                  {sendingShoutout ? '⏳ Sending...' : !canShoutout ? ('Need ' + shoutoutCost + ' coins · 🪙 ' + (shoutoutCost - effectiveCoins) + ' more') : ('📣 Send Shoutout · 🪙 ' + shoutoutCost + ' coins')}
                 </button>
-                {!canShoutout && coins < shoutoutCost && (
-                  <div style={{ textAlign: 'center' }}>
-                    <button onClick={() => { setBuyMode(true); setError('') }}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>
-                      + Get more coins
-                    </button>
-                  </div>
-                )}
+                {!canShoutout && effectiveCoins < shoutoutCost && (<div style={{ textAlign: 'center' }}><button onClick={() => { setBuyMode(true); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
               </div>
             </div>
           </>
         )}
 
-        {/* LIVE QUEUE */}
         <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
             <h2 style={{ fontWeight: 800, fontSize: '16px', color: 'var(--text-secondary)' }}>🎶 Up Next</h2>
@@ -599,21 +430,11 @@ export default function ShowPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.songTitle}</p>
                       <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '1px' }}>{item.requester}</p>
-                      {item.dedication && (
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          "{item.dedication}"
-                        </p>
-                      )}
+                      {item.dedication && (<p style={{ color: 'var(--text-secondary)', fontSize: '12px', fontStyle: 'italic', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>"{item.dedication}"</p>)}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-end', flexShrink: 0 }}>
-                      {tierLabel && (
-                        <span style={{ fontSize: '11px', color: tierColor, fontWeight: 700, background: tierColor + '18', padding: '2px 8px', borderRadius: '10px', border: '1px solid ' + tierColor + '33', whiteSpace: 'nowrap' }}>
-                          {tierIcon} {tierLabel}
-                        </span>
-                      )}
-                      {i === 0 && (
-                        <span style={{ fontSize: '11px', color: 'var(--neon)', fontWeight: 700, background: 'var(--neon-dim)', padding: '2px 8px', borderRadius: '10px', border: '1px solid rgba(0,255,136,0.15)', whiteSpace: 'nowrap' }}>Playing soon</span>
-                      )}
+                      {tierLabel && (<span style={{ fontSize: '11px', color: tierColor, fontWeight: 700, background: tierColor + '18', padding: '2px 8px', borderRadius: '10px', border: '1px solid ' + tierColor + '33', whiteSpace: 'nowrap' }}>{tierIcon} {tierLabel}</span>)}
+                      {i === 0 && (<span style={{ fontSize: '11px', color: 'var(--neon)', fontWeight: 700, background: 'var(--neon-dim)', padding: '2px 8px', borderRadius: '10px', border: '1px solid rgba(0,255,136,0.15)', whiteSpace: 'nowrap' }}>Playing soon</span>)}
                     </div>
                   </div>
                 )
@@ -621,10 +442,8 @@ export default function ShowPage() {
             </div>
           )}
         </div>
-
       </div>
-
       <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }'}</style>
     </div>
   )
-                    }
+}

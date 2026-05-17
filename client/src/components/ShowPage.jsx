@@ -63,6 +63,11 @@ export default function ShowPage() {
   const [shoutoutName, setShoutoutName] = useState('')
   const [sendingShoutout, setSendingShoutout] = useState(false)
   const [shoutoutSuccess, setShoutoutSuccess] = useState(false)
+  const [tipAmount, setTipAmount] = useState('')
+  const [tipMessage, setTipMessage] = useState('')
+  const [tipName, setTipName] = useState('')
+  const [sendingTip, setSendingTip] = useState(false)
+  const [tipSuccess, setTipSuccess] = useState(false)
   const wsRef = useRef(null)
 
   useEffect(() => { storeCoins(coins) }, [coins])
@@ -128,12 +133,23 @@ export default function ShowPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const refreshFanBalance = () => {
+    if (!fanToken) return
+    fetch('/api/fan/me', { headers: { Authorization: 'Bearer ' + fanToken } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setFanBalance(data.coinBalance) })
+      .catch(() => {})
+  }
+
   useEffect(() => {
     if (!slug) return
     const wsBase = window.location.origin.replace(/^http/, 'ws')
     wsRef.current = new WebSocket(wsBase + '/ws/' + slug)
     wsRef.current.onmessage = (evt) => {
-      try { const msg = JSON.parse(evt.data); if (msg.type === 'QUEUE_UPDATE' || !msg.type) fetchShow() } catch { fetchShow() }
+      try {
+        const msg = JSON.parse(evt.data)
+        if (msg.type === 'QUEUE_UPDATE' || !msg.type) { fetchShow(); refreshFanBalance() }
+      } catch { fetchShow() }
     }
     return () => wsRef.current?.close()
   }, [slug])
@@ -196,18 +212,19 @@ export default function ShowPage() {
     if (!title) return setError('Please select or enter a song')
     setSubmitting(true); setError('')
     try {
+      const reqHeaders = { 'Content-Type': 'application/json' }
+      if (fanToken) reqHeaders['Authorization'] = 'Bearer ' + fanToken
       const res = await fetch('/api/queue/' + slug, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: reqHeaders,
         body: JSON.stringify({ songTitle: title, requester: requester.trim() || 'Anonymous', tier, dedication: dedication.trim().slice(0, 60) || undefined })
       })
       const data = await res.json()
       if (res.status === 429) { setError(data.error || "You've reached the limit for this show"); return }
       if (!res.ok) throw new Error(data.error)
-      updateCoins(c => c - deductCost)
       if (tier === 'PRIORITY') { const next = jumpsUsed + 1; setJumpsUsed(next); try { localStorage.setItem('nextup_jumps_' + slug, String(next)) } catch {} }
       if (tier === 'PLAY_NEXT') { const next = playNextUsed + 1; setPlayNextUsed(next); try { localStorage.setItem('nextup_playnext_' + slug, String(next)) } catch {} }
       setSelectedSong(''); setCustomSong(''); setDedication('')
-      setSuccess(true); setTimeout(() => setSuccess(false), 5000)
+      setSuccess(true); setTimeout(() => setSuccess(false), 6000)
     } catch (err) { setError(err.message) }
     finally { setSubmitting(false) }
   }
@@ -218,16 +235,41 @@ export default function ShowPage() {
     if (effectiveCoins < shoutoutCost) return setError('You need ' + shoutoutCost + ' coins to send a shoutout')
     setSendingShoutout(true); setError('')
     try {
+      const reqHeaders = { 'Content-Type': 'application/json' }
+      if (fanToken) reqHeaders['Authorization'] = 'Bearer ' + fanToken
       const res = await fetch('/api/shoutout/' + slug, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: reqHeaders,
         body: JSON.stringify({ message: shoutoutMsg.trim(), fromName: shoutoutName.trim() || 'Anonymous' })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      updateCoins(c => c - shoutoutCost); setShoutoutMsg(''); setShoutoutName('')
+      if (fanToken) { refreshFanBalance() } else { updateCoins(c => c - shoutoutCost) }
+      setShoutoutMsg(''); setShoutoutName('')
       setShoutoutSuccess(true); setTimeout(() => setShoutoutSuccess(false), 5000)
     } catch (err) { setError(err.message) }
     finally { setSendingShoutout(false) }
+  }
+
+  const handleTip = async () => {
+    const amount = parseInt(tipAmount, 10)
+    const tipCost = show?.tipCost || 1
+    if (isNaN(amount) || amount < tipCost) return setError('Minimum tip is ' + tipCost + ' coins')
+    if (effectiveCoins < amount) return setError('You need ' + amount + ' coins to tip that amount')
+    setSendingTip(true); setError('')
+    try {
+      const reqHeaders = { 'Content-Type': 'application/json' }
+      if (fanToken) reqHeaders['Authorization'] = 'Bearer ' + fanToken
+      const res = await fetch('/api/tip/' + slug, {
+        method: 'POST', headers: reqHeaders,
+        body: JSON.stringify({ coins: amount, fromName: tipName.trim() || 'Anonymous', message: tipMessage.trim() || undefined })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      if (fanToken) { refreshFanBalance() } else { updateCoins(c => c - amount) }
+      setTipAmount(''); setTipMessage(''); setTipName('')
+      setTipSuccess(true); setTimeout(() => setTipSuccess(false), 5000)
+    } catch (err) { setError(err.message) }
+    finally { setSendingTip(false) }
   }
 
   if (!show) return (
@@ -322,8 +364,9 @@ export default function ShowPage() {
       </div>
       <div style={{ maxWidth: '540px', margin: '0 auto', padding: '28px 20px 60px' }}>
         {redeeming && (<div style={{ background: 'rgba(0,255,136,0.04)', border: '1.5px solid rgba(0,255,136,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '14px', textAlign: 'center' }}><p style={{ color: 'var(--neon)', fontWeight: 600, fontSize: '14px' }}>⏳ Confirming your payment...</p></div>)}
-        {success && (<div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '16px' }}>🎵 Request sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>You're in the queue!</p></div>)}
+        {success && (<div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '16px' }}>🎵 Request submitted!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>Awaiting the performer's approval — coins charged on acceptance.</p></div>)}
         {shoutoutSuccess && (<div style={{ background: 'rgba(139,92,246,0.08)', border: '1.5px solid rgba(139,92,246,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: '#a78bfa', fontWeight: 700, fontSize: '16px' }}>📣 Shoutout sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>The performer will see your message!</p></div>)}
+        {tipSuccess && (<div style={{ background: 'rgba(234,179,8,0.08)', border: '1.5px solid rgba(234,179,8,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: '#eab308', fontWeight: 700, fontSize: '16px' }}>💰 Tip sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>Thanks for supporting the performer!</p></div>)}
         {error && <div className="error" style={{ marginBottom: '14px' }}>{error}</div>}
 
         {buyMode ? (
@@ -372,7 +415,10 @@ export default function ShowPage() {
                   {availableGenres.length > 2 && (<div><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}><div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>{availableGenres.map(g => (<button key={g} onClick={() => setGenreFilter(g)} style={{ padding: '4px 11px', fontSize: '12px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', background: genreFilter === g ? 'var(--neon-dim)' : 'var(--surface2)', border: '1px solid ' + (genreFilter === g ? 'rgba(0,255,136,0.3)' : 'var(--border)'), color: genreFilter === g ? 'var(--neon)' : 'var(--muted)', transition: 'all 0.15s' }}>{g}</button>))}</div><button onClick={() => setSortAZ(v => !v)} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, marginLeft: '6px', background: sortAZ ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1px solid ' + (sortAZ ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: sortAZ ? '#a78bfa' : 'var(--muted)', transition: 'all 0.15s' }}>A-Z</button></div></div>)}
                   {filteredSongs.length > 0 && (<select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}><option value="">Pick from setlist...</option>{filteredSongs.map(s => (<option key={s.id} value={s.title}>{s.title}{s.artist ? ' - ' + s.artist : ''}</option>))}</select>)}
                   <input placeholder={show.songs?.length > 0 ? 'Or type any song...' : 'Song title...'} value={customSong} onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }} />
-                  <div style={{ position: 'relative' }}><input placeholder="Dedicate this song to someone? (optional)" value={dedication} onChange={e => setDedication(e.target.value.slice(0, 60))} style={{ paddingRight: '48px' }} />{dedication.length > 0 && (<span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: dedication.length >= 55 ? '#ef4444' : 'var(--muted)', fontWeight: 600, pointerEvents: 'none' }}>{60 - dedication.length}</span>)}</div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Song Dedication (optional)</label>
+                    <div style={{ position: 'relative' }}><input placeholder="e.g. 'Happy Birthday Sarah! 🎂'" value={dedication} onChange={e => setDedication(e.target.value.slice(0, 60))} style={{ paddingRight: '48px', borderColor: dedication ? 'rgba(167,139,250,0.4)' : undefined }} />{dedication.length > 0 && (<span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: dedication.length >= 55 ? '#ef4444' : 'var(--muted)', fontWeight: 600, pointerEvents: 'none' }}>{60 - dedication.length}</span>)}</div>
+                  </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <button type="button" onClick={() => handleRequest('STANDARD')} disabled={submitting || !canStandard} style={tierButtonStyle('STANDARD', canStandard && !submitting)}><div style={{ fontSize: '18px', marginBottom: '2px' }}>🎵</div><div style={{ fontSize: '12px' }}>Add to Queue</div><div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>🪙 {cost}</div></button>
                     <button type="button" onClick={() => handleRequest('PRIORITY')} disabled={submitting || !canPriority} style={tierButtonStyle('PRIORITY', canPriority && !submitting)}><div style={{ fontSize: '18px', marginBottom: '2px' }}>⚡</div><div style={{ fontSize: '12px' }}>Move Up</div><div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>{jumpsUsed >= maxJumps ? 'Limit reached' : '🪙 ' + jumpCost + ' (' + (maxJumps - jumpsUsed) + ' left)'}</div></button>
@@ -404,6 +450,30 @@ export default function ShowPage() {
                 {!canShoutout && effectiveCoins < shoutoutCost && (<div style={{ textAlign: 'center' }}><button onClick={() => { setBuyMode(true); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
               </div>
             </div>
+
+            {(() => {
+              const tipCost = show?.tipCost || 1
+              const canTip = effectiveCoins >= tipCost
+              const tipAmountNum = parseInt(tipAmount, 10)
+              const tipValid = !isNaN(tipAmountNum) && tipAmountNum >= tipCost && effectiveCoins >= tipAmountNum
+              return (
+                <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(234,179,8,0.15)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                    <div><h2 style={{ fontWeight: 800, fontSize: '17px' }}>💰 Send a Tip</h2><p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>Support the performer · <span style={{ color: '#eab308', fontWeight: 700 }}>min 🪙 {tipCost} coins</span></p></div>
+                    {canTip && (<span style={{ background: 'rgba(234,179,8,0.1)', color: '#eab308', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(234,179,8,0.25)', whiteSpace: 'nowrap', flexShrink: 0 }}>🪙 {effectiveCoins} left</span>)}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <input placeholder="Your name (optional)" value={tipName} onChange={e => setTipName(e.target.value)} />
+                    <input type="number" min={tipCost} placeholder={'Coins to tip (min ' + tipCost + ')'} value={tipAmount} onChange={e => setTipAmount(e.target.value)} />
+                    <textarea placeholder="Message (optional)" value={tipMessage} onChange={e => setTipMessage(e.target.value.slice(0, 120))} rows={2} style={{ resize: 'vertical', minHeight: '60px' }} />
+                    <button type="button" onClick={handleTip} disabled={sendingTip || !tipValid} style={{ padding: '12px', fontSize: '14px', borderRadius: '10px', background: tipValid ? 'rgba(234,179,8,0.12)' : 'var(--surface2)', border: '1.5px solid ' + (tipValid ? 'rgba(234,179,8,0.4)' : 'var(--border)'), color: tipValid ? '#eab308' : 'var(--muted)', fontWeight: 700, cursor: tipValid ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
+                      {sendingTip ? '⏳ Sending...' : !canTip ? ('Need ' + tipCost + ' coins · 🪙 ' + (tipCost - effectiveCoins) + ' more') : tipAmountNum > 0 ? ('💰 Send Tip · 🪙 ' + tipAmountNum + ' coins') : '💰 Send Tip'}
+                    </button>
+                    {!canTip && (<div style={{ textAlign: 'center' }}><button onClick={() => { setBuyMode(true); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
+                  </div>
+                </div>
+              )
+            })()}
           </>
         )}
 

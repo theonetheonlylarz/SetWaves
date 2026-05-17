@@ -16,10 +16,12 @@ const TIER_META = {
 export default function Dashboard() {
   const [profile, setProfile] = useState(null)
   const [queue, setQueue] = useState([])
+  const [pendingQueue, setPendingQueue] = useState([])
   const [songs, setSongs] = useState([])
   const [shoutouts, setShoutouts] = useState([])
+  const [tips, setTips] = useState([])
   const [stats, setStats] = useState(null)
-  const [tab, setTab] = useState('queue')
+  const [tab, setTab] = useState('inbox')
   const [newSong, setNewSong] = useState({ title: '', artist: '', genre: 'Other' })
   const [qr, setQr] = useState(null)
   const [error, setError] = useState('')
@@ -32,6 +34,7 @@ export default function Dashboard() {
   const [playNextCost, setPlayNextCost] = useState(15)
   const [maxPlayNext, setMaxPlayNext] = useState(1)
   const [shoutoutCost, setShoutoutCost] = useState(10)
+  const [tipCostSetting, setTipCostSetting] = useState(5)
   const [savingPricing, setSavingPricing] = useState(false)
   const [pricingSaved, setPricingSaved] = useState(false)
   const navigate = useNavigate()
@@ -41,15 +44,17 @@ export default function Dashboard() {
 
   const fetchAll = async () => {
     try {
-      const [profileRes, queueRes, songsRes] = await Promise.all([
+      const [profileRes, queueRes, songsRes, pendingRes] = await Promise.all([
         fetch('/api/profile', { headers }),
         fetch('/api/queue', { headers }),
-        fetch('/api/songs', { headers })
+        fetch('/api/songs', { headers }),
+        fetch('/api/queue/pending', { headers }),
       ])
       if (profileRes.status === 401) { localStorage.clear(); navigate('/login'); return }
       const profileData = await profileRes.json()
       const queueData = await queueRes.json()
       const songsData = await songsRes.json()
+      const pendingData = await pendingRes.json()
       setProfile(profileData)
       setDisplayName(profileData.displayName)
       setCoinCost(profileData.queueCoinCost ?? 1)
@@ -58,9 +63,18 @@ export default function Dashboard() {
       setPlayNextCost(profileData.playNextCost ?? 15)
       setMaxPlayNext(profileData.maxPlayNextPerSession ?? 1)
       setShoutoutCost(profileData.shoutoutCost ?? 10)
+      setTipCostSetting(profileData.tipCost ?? 5)
       setQueue(Array.isArray(queueData) ? queueData : [])
       setSongs(Array.isArray(songsData) ? songsData : [])
+      setPendingQueue(Array.isArray(pendingData) ? pendingData : [])
     } catch (e) { setError(e.message) }
+  }
+
+  const fetchTips = async () => {
+    try {
+      const res = await fetch('/api/tips', { headers })
+      if (res.ok) setTips(await res.json())
+    } catch {}
   }
 
   const fetchShoutouts = async () => {
@@ -82,6 +96,7 @@ export default function Dashboard() {
     fetch('/api/qrcode', { headers }).then(r => r.json()).then(d => setQr(d))
     fetchShoutouts()
     fetchStats()
+    fetchTips()
   }, [])
 
   useEffect(() => {
@@ -94,6 +109,7 @@ export default function Dashboard() {
         if (msg.type === 'QUEUE_UPDATE') fetchAll()
         if (msg.type === 'SHOUTOUT_NEW') { fetchShoutouts(); fetchStats() }
         if (msg.type === 'SHOUTOUT_READ') fetchShoutouts()
+        if (msg.type === 'TIP_NEW') { fetchTips(); fetchStats() }
       } catch { fetchAll() }
     }
     return () => wsRef.current?.close()
@@ -146,12 +162,14 @@ export default function Dashboard() {
     const playNextVal = parseInt(playNextCost, 10)
     const maxPlayNextVal = parseInt(maxPlayNext, 10)
     const shoutoutVal = parseInt(shoutoutCost, 10)
+    const tipCostVal = parseInt(tipCostSetting, 10)
     if (!costVal || costVal < 1 || costVal > 100) return
     if (!jumpVal || jumpVal < 1 || jumpVal > 100) return
     if (!maxVal || maxVal < 1 || maxVal > 20) return
     if (!playNextVal || playNextVal < 1 || playNextVal > 200) return
     if (!maxPlayNextVal || maxPlayNextVal < 1 || maxPlayNextVal > 10) return
     if (!shoutoutVal || shoutoutVal < 1 || shoutoutVal > 100) return
+    if (!tipCostVal || tipCostVal < 1 || tipCostVal > 100) return
     setSavingPricing(true)
     await fetch('/api/pricing', {
       method: 'PUT',
@@ -163,11 +181,22 @@ export default function Dashboard() {
         playNextCost: playNextVal,
         maxPlayNextPerSession: maxPlayNextVal,
         shoutoutCost: shoutoutVal,
+        tipCost: tipCostVal,
       })
     })
     setSavingPricing(false)
     setPricingSaved(true)
     setTimeout(() => setPricingSaved(false), 2500)
+    fetchAll()
+  }
+
+  const acceptQueueItem = async (id) => {
+    await fetch('/api/queue/' + id + '/accept', { method: 'PUT', headers })
+    fetchAll(); fetchStats()
+  }
+
+  const denyQueueItem = async (id) => {
+    await fetch('/api/queue/' + id + '/deny', { method: 'PUT', headers })
     fetchAll()
   }
 
@@ -188,8 +217,10 @@ export default function Dashboard() {
   const totalEarned = stats ? (stats.totalCoins * 0.9).toFixed(2) : null
 
   const TABS = [
+    { id: 'inbox', label: 'Inbox', badge: pendingQueue.length },
     { id: 'queue', label: 'Queue', badge: activeQueue.length },
     { id: 'shoutouts', label: '📣 Shoutouts', badge: unreadShoutouts },
+    { id: 'tips', label: '💰 Tips', badge: 0 },
     { id: 'songs', label: 'Setlist' },
     { id: 'qr', label: 'QR Code' },
     { id: 'settings', label: 'Settings' },
@@ -244,6 +275,82 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
+
+        {tab === 'inbox' && (
+          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {pendingQueue.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '64px 20px' }}>
+                <div style={{ fontSize: '52px', marginBottom: '16px' }}>📬</div>
+                <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '17px', marginBottom: '8px' }}>No pending requests</p>
+                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>New song requests will appear here for you to approve</p>
+              </div>
+            ) : pendingQueue.map((item, i) => {
+              const tierInfo = TIER_META[item.tier] || TIER_META.STANDARD
+              return (
+                <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 18px', borderLeft: '3px solid ' + tierInfo.color, animation: 'fadeUp 0.2s ease ' + (i * 0.04) + 's both' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flex: 1, minWidth: 0 }}>
+                    <div style={{ width: '38px', height: '38px', background: tierInfo.bg, border: '1px solid ' + tierInfo.color + '40', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>
+                      {tierInfo.icon}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <p style={{ fontWeight: 700, fontSize: '15px' }}>{item.songTitle}</p>
+                        <span style={{ fontSize: '10px', color: tierInfo.color, fontWeight: 700, background: tierInfo.bg, padding: '2px 7px', borderRadius: '6px', whiteSpace: 'nowrap' }}>{tierInfo.label}</span>
+                      </div>
+                      <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
+                        from <span style={{ color: 'var(--text-secondary)' }}>{item.requester}</span>
+                        <span style={{ marginLeft: '8px', color: tierInfo.color, fontSize: '11px', fontWeight: 600 }}>{tierInfo.icon} {item.tokens} coins</span>
+                      </p>
+                      {item.dedication && (
+                        <p style={{ color: '#a78bfa', fontSize: '12px', marginTop: '4px', fontStyle: 'italic' }}>
+                          Dedicated to: "{item.dedication}"
+                        </p>
+                      )}
+                      <p style={{ color: 'var(--muted)', fontSize: '11px', marginTop: '3px' }}>{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
+                    <button onClick={() => acceptQueueItem(item.id)} style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--neon)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: '7px', padding: '6px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}>
+                      Accept
+                    </button>
+                    <button onClick={() => denyQueueItem(item.id)} style={{ background: 'rgba(255,91,91,0.08)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {tab === 'tips' && (
+          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {tips.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '64px 20px' }}>
+                <div style={{ fontSize: '52px', marginBottom: '16px' }}>💰</div>
+                <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '17px', marginBottom: '8px' }}>No tips yet</p>
+                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Fans can send you tips from your show page</p>
+              </div>
+            ) : tips.map(tip => (
+              <div key={tip.id} className="card" style={{ padding: '16px 18px', borderLeft: '3px solid #eab308' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px', color: '#eab308' }}>
+                      💰 {tip.coins} coins
+                    </p>
+                    <p style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                      from <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{tip.fromName}</span>
+                      <span style={{ marginLeft: '8px', color: 'var(--muted)' }}>{new Date(tip.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </p>
+                    {tip.message && (
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '6px', fontStyle: 'italic' }}>"{tip.message}"</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {tab === 'queue' && (
           <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -430,6 +537,10 @@ export default function Dashboard() {
                   <div>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>📣 Shoutout cost (coins)</label>
                     <input type="number" min="1" max="100" value={shoutoutCost} onChange={e => setShoutoutCost(e.target.value)} style={{ width: '100%' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#eab308', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>💰 Min Tip (coins)</label>
+                    <input type="number" min="1" max="100" value={tipCostSetting} onChange={e => setTipCostSetting(e.target.value)} style={{ width: '100%' }} />
                   </div>
                 </div>
 

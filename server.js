@@ -84,6 +84,15 @@ function fanAuth(req, res, next) {
   } catch { res.status(401).json({ error: 'Invalid token' }); }
 }
 
+function optionalFanId(req) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    return (payload.role === 'fan') ? payload.fanId : null;
+  } catch { return null; }
+}
+
 app.post('/api/register', async (req, res) => {
   const { email, password, displayName } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -171,7 +180,8 @@ app.get('/api/profile', auth, async (req, res) => {
   res.json({ id: user.id, email: user.email, slug: user.slug, displayName: user.displayName,
     stripeOnboarded: user.stripeOnboarded, queueCoinCost: user.queueCoinCost,
     queueJumpCost: user.queueJumpCost, maxJumpsPerSession: user.maxJumpsPerSession,
-    playNextCost: user.playNextCost, maxPlayNextPerSession: user.maxPlayNextPerSession, shoutoutCost: user.shoutoutCost });
+    playNextCost: user.playNextCost, maxPlayNextPerSession: user.maxPlayNextPerSession,
+    shoutoutCost: user.shoutoutCost, tipCost: user.tipCost });
 });
 
 app.put('/api/profile', auth, async (req, res) => {
@@ -186,6 +196,7 @@ app.put('/api/pricing', auth, async (req, res) => {
   const playNextCost = parseInt(req.body.playNextCost, 10);
   const maxPlayNext = parseInt(req.body.maxPlayNextPerSession, 10);
   const shoutoutCost = parseInt(req.body.shoutoutCost, 10);
+  const tipCostVal = parseInt(req.body.tipCost, 10);
   const data = {};
   if (!isNaN(cost) && cost >= 1 && cost <= 100) data.queueCoinCost = cost;
   if (!isNaN(jumpCost) && jumpCost >= 1 && jumpCost <= 100) data.queueJumpCost = jumpCost;
@@ -193,11 +204,13 @@ app.put('/api/pricing', auth, async (req, res) => {
   if (!isNaN(playNextCost) && playNextCost >= 1 && playNextCost <= 200) data.playNextCost = playNextCost;
   if (!isNaN(maxPlayNext) && maxPlayNext >= 1 && maxPlayNext <= 10) data.maxPlayNextPerSession = maxPlayNext;
   if (!isNaN(shoutoutCost) && shoutoutCost >= 1 && shoutoutCost <= 100) data.shoutoutCost = shoutoutCost;
+  if (!isNaN(tipCostVal) && tipCostVal >= 1 && tipCostVal <= 100) data.tipCost = tipCostVal;
   if (Object.keys(data).length === 0) return res.status(400).json({ error: 'No valid pricing provided' });
   const user = await prisma.user.update({ where: { id: req.userId }, data });
   res.json({ queueCoinCost: user.queueCoinCost, queueJumpCost: user.queueJumpCost,
     maxJumpsPerSession: user.maxJumpsPerSession, playNextCost: user.playNextCost,
-    maxPlayNextPerSession: user.maxPlayNextPerSession, shoutoutCost: user.shoutoutCost });
+    maxPlayNextPerSession: user.maxPlayNextPerSession, shoutoutCost: user.shoutoutCost,
+    tipCost: user.tipCost });
 });
 // -- SONGS --
 
@@ -230,9 +243,18 @@ app.patch('/api/songs/:id', auth, async (req, res) => {
 
 app.get('/api/queue', auth, async (req, res) => {
   res.json(await prisma.queueItem.findMany({
-    where: { userId: req.userId, played: false },
+    where: { userId: req.userId, played: false, status: 'ACCEPTED' },
     orderBy: [{ tierOrder: 'desc' }, { createdAt: 'asc' }],
   }));
+});
+
+app.get('/api/queue/pending', auth, async (req, res) => {
+  try {
+    res.json(await prisma.queueItem.findMany({
+      where: { userId: req.userId, status: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+    }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/queue/:id/played', auth, async (req, res) => {
@@ -251,6 +273,45 @@ app.delete('/api/queue/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
+app.put('/api/queue/:id/accept', auth, async (req, res) => {
+  try {
+    const item = await prisma.queueItem.findFirst({
+      where: { id: req.params.id, userId: req.userId, status: 'PENDING' }
+    });
+    if (!item) return res.status(404).json({ error: 'Request not found or already processed' });
+    if (item.fanId) {
+      const fan = await prisma.fan.findUnique({ where: { id: item.fanId } });
+      if (!fan || fan.coinBalance < item.tokens) {
+        await prisma.queueItem.delete({ where: { id: item.id } });
+        const u = await prisma.user.findUnique({ where: { id: req.userId } });
+        broadcast(req.userId, { type: 'QUEUE_UPDATE' });
+        if (u) broadcast(u.slug, { type: 'QUEUE_UPDATE' });
+        return res.status(402).json({ error: 'Fan has insufficient coins — request removed' });
+      }
+      await prisma.fan.update({ where: { id: item.fanId }, data: { coinBalance: { decrement: item.tokens } } });
+    }
+    const updated = await prisma.queueItem.update({ where: { id: item.id }, data: { status: 'ACCEPTED' } });
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    broadcast(req.userId, { type: 'QUEUE_UPDATE' });
+    if (user) broadcast(user.slug, { type: 'QUEUE_UPDATE' });
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/queue/:id/deny', auth, async (req, res) => {
+  try {
+    const item = await prisma.queueItem.findFirst({
+      where: { id: req.params.id, userId: req.userId, status: 'PENDING' }
+    });
+    if (!item) return res.status(404).json({ error: 'Request not found or already processed' });
+    await prisma.queueItem.delete({ where: { id: item.id } });
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    broadcast(req.userId, { type: 'QUEUE_UPDATE' });
+    if (user) broadcast(user.slug, { type: 'QUEUE_UPDATE' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // -- SHOW (PUBLIC) --
 
 app.get('/api/show/:slug', async (req, res) => {
@@ -259,7 +320,7 @@ app.get('/api/show/:slug', async (req, res) => {
       where: { slug: req.params.slug },
       include: {
         songs: { where: { active: true }, orderBy: { order: 'asc' } },
-        queue: { where: { played: false }, orderBy: [{ tierOrder: 'desc' }, { createdAt: 'asc' }] },
+        queue: { where: { played: false, status: 'ACCEPTED' }, orderBy: [{ tierOrder: 'desc' }, { createdAt: 'asc' }] },
       }
     });
     if (!user) return res.status(404).json({ error: 'Performer not found' });
@@ -267,7 +328,8 @@ app.get('/api/show/:slug', async (req, res) => {
       queueCoinCost: user.queueCoinCost, queueJumpCost: user.queueJumpCost,
       maxJumpsPerSession: user.maxJumpsPerSession, playNextCost: user.playNextCost,
       maxPlayNextPerSession: user.maxPlayNextPerSession, shoutoutCost: user.shoutoutCost,
-      stripeOnboarded: user.stripeOnboarded, stripeEnabled: !!stripeInstance });
+      stripeOnboarded: user.stripeOnboarded, stripeEnabled: !!stripeInstance,
+      tipCost: user.tipCost });
   } catch (e) { console.error('Show error:', e.message); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -280,6 +342,9 @@ app.post('/api/queue/:slug', async (req, res) => {
   const isPriority = requestedTier === 'PRIORITY';
   const isPlayNext = requestedTier === 'PLAY_NEXT';
   const requesterName = (requester || 'Anonymous').trim();
+  const fanId = optionalFanId(req);
+  if ((isPriority || isPlayNext) && !fanId)
+    return res.status(401).json({ error: 'Please sign in to use Move Up or Play Next' });
   if (isPriority) {
     const jumpCount = await prisma.queueItem.count({ where: { userId: user.id, tier: 'PRIORITY', played: false, requester: requesterName } });
     if (jumpCount >= user.maxJumpsPerSession)
@@ -292,23 +357,31 @@ app.post('/api/queue/:slug', async (req, res) => {
   }
   const tierOrder = isPlayNext ? 2 : isPriority ? 1 : 0;
   const tokenCost = isPlayNext ? user.playNextCost : isPriority ? user.queueJumpCost : user.queueCoinCost;
-  const item = await prisma.queueItem.create({
-    data: { songTitle, requester: requesterName,
-      dedication: (dedication && dedication.trim()) ? dedication.trim().slice(0, 60) : null,
-      tier: requestedTier, tierOrder, tokens: tokenCost, priority: isPriority || isPlayNext, userId: user.id }
-  });
-  broadcast(user.id, { type: 'QUEUE_UPDATE' });
-  broadcast(user.slug, { type: 'QUEUE_UPDATE' });
-  res.json(item);
+  if (fanId) {
+    const fan = await prisma.fan.findUnique({ where: { id: fanId } });
+    if (!fan || fan.coinBalance < tokenCost)
+      return res.status(402).json({ error: 'Insufficient coins' });
+  }
+  try {
+    const item = await prisma.queueItem.create({
+      data: { songTitle, requester: requesterName,
+        dedication: (dedication && dedication.trim()) ? dedication.trim().slice(0, 60) : null,
+        tier: requestedTier, tierOrder, tokens: tokenCost, priority: isPriority || isPlayNext,
+        status: 'PENDING', fanId: fanId || null, userId: user.id }
+    });
+    broadcast(user.id, { type: 'QUEUE_UPDATE' });
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // -- STATS --
 
 app.get('/api/stats', auth, async (req, res) => {
   try {
-    const queueResult = await prisma.queueItem.aggregate({ where: { userId: req.userId }, _sum: { tokens: true }, _count: true });
+    const queueResult = await prisma.queueItem.aggregate({ where: { userId: req.userId, status: 'ACCEPTED' }, _sum: { tokens: true }, _count: true });
     const shoutoutResult = await prisma.shoutout.aggregate({ where: { userId: req.userId }, _sum: { coins: true }, _count: true });
-    res.json({ totalCoins: (queueResult._sum.tokens || 0) + (shoutoutResult._sum.coins || 0),
-      totalRequests: queueResult._count || 0, totalShoutouts: shoutoutResult._count || 0 });
+    const tipResult = await prisma.tip.aggregate({ where: { userId: req.userId }, _sum: { coins: true }, _count: true });
+    res.json({ totalCoins: (queueResult._sum.tokens || 0) + (shoutoutResult._sum.coins || 0) + (tipResult._sum.coins || 0),
+      totalRequests: queueResult._count || 0, totalShoutouts: shoutoutResult._count || 0, totalTips: tipResult._count || 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -320,12 +393,49 @@ app.post('/api/shoutout/:slug', async (req, res) => {
   if (message.length > 120) return res.status(400).json({ error: 'Message too long (max 120 chars)' });
   const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
   if (!user) return res.status(404).json({ error: 'Performer not found' });
+  const fanId = optionalFanId(req);
+  if (fanId) {
+    const fan = await prisma.fan.findUnique({ where: { id: fanId } });
+    if (!fan || fan.coinBalance < user.shoutoutCost)
+      return res.status(402).json({ error: 'Insufficient coins' });
+    await prisma.fan.update({ where: { id: fanId }, data: { coinBalance: { decrement: user.shoutoutCost } } });
+  }
   try {
     const shoutout = await prisma.shoutout.create({
-      data: { message: message.trim(), fromName: (fromName || 'Anonymous').trim().slice(0, 40), coins: user.shoutoutCost, userId: user.id }
+      data: { message: message.trim(), fromName: (fromName || 'Anonymous').trim().slice(0, 40),
+        coins: user.shoutoutCost, fanId: fanId || null, userId: user.id }
     });
     broadcast(user.id, { type: 'SHOUTOUT_NEW' });
     res.json(shoutout);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/tip/:slug', async (req, res) => {
+  const coins = parseInt(req.body.coins, 10);
+  const { fromName, message } = req.body;
+  if (isNaN(coins) || coins < 1) return res.status(400).json({ error: 'Invalid tip amount' });
+  const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
+  if (!user) return res.status(404).json({ error: 'Performer not found' });
+  if (coins < user.tipCost) return res.status(400).json({ error: 'Minimum tip is ' + user.tipCost + ' coins' });
+  const fanId = optionalFanId(req);
+  if (fanId) {
+    const fan = await prisma.fan.findUnique({ where: { id: fanId } });
+    if (!fan || fan.coinBalance < coins) return res.status(402).json({ error: 'Insufficient coins' });
+    await prisma.fan.update({ where: { id: fanId }, data: { coinBalance: { decrement: coins } } });
+  }
+  try {
+    const tip = await prisma.tip.create({
+      data: { coins, fromName: (fromName || 'Anonymous').trim().slice(0, 40),
+        message: message ? message.trim().slice(0, 120) : null, fanId: fanId || null, userId: user.id }
+    });
+    broadcast(user.id, { type: 'TIP_NEW' });
+    res.json(tip);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/tips', auth, async (req, res) => {
+  try {
+    res.json(await prisma.tip.findMany({ where: { userId: req.userId }, orderBy: { createdAt: 'desc' } }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

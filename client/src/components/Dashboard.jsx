@@ -42,6 +42,10 @@ export default function Dashboard() {
   const [nowPlayingInput, setNowPlayingInput] = useState('')
   const [nowPlayingText, setNowPlayingText] = useState('')
   const [savingNowPlaying, setSavingNowPlaying] = useState(false)
+  const [genreVoteEnabled, setGenreVoteEnabled] = useState(false)
+  const [genreVoteOptions, setGenreVoteOptions] = useState([])
+  const [voteResults, setVoteResults] = useState([])
+  const [resetingVotes, setResetingVotes] = useState(false)
   const [stripeEnabled, setStripeEnabled] = useState(false)
   const [stripeOnboarded, setStripeOnboarded] = useState(false)
   const [connectingStripe, setConnectingStripe] = useState(false)
@@ -79,6 +83,8 @@ export default function Dashboard() {
       setStripeEnabled(profileData.stripeEnabled ?? false)
       setStripeOnboarded(profileData.stripeOnboarded ?? false)
       setPendingEarningsCents(profileData.pendingEarningsCents ?? 0)
+      setGenreVoteEnabled(profileData.genreVoteEnabled ?? false)
+      try { setGenreVoteOptions(JSON.parse(profileData.genreVoteOptions || '[]')) } catch { setGenreVoteOptions([]) }
       setQueueOpen(profileData.queueOpen ?? true)
       setNowPlayingText(profileData.nowPlaying || '')
       setNowPlayingInput(profileData.nowPlaying || '')
@@ -86,6 +92,14 @@ export default function Dashboard() {
       setSongs(Array.isArray(songsData) ? songsData : [])
       setPendingQueue(Array.isArray(pendingData) ? pendingData : [])
     } catch (e) { setError(e.message) }
+  }
+
+  const fetchVotes = async (slug) => {
+    if (!slug) return
+    try {
+      const res = await fetch('/api/votes/' + slug, { headers })
+      if (res.ok) { const d = await res.json(); setVoteResults(d.votes || []) }
+    } catch {}
   }
 
   const fetchTips = async () => {
@@ -110,7 +124,9 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    fetchAll()
+    fetchAll().then(() => {
+      fetch('/api/profile', { headers }).then(r => r.json()).then(p => fetchVotes(p.slug)).catch(() => {})
+    })
     fetch('/api/qrcode', { headers }).then(r => r.json()).then(d => setQr(d))
     fetchShoutouts()
     fetchStats()
@@ -151,6 +167,7 @@ export default function Dashboard() {
         if (msg.type === 'TIP_NEW') { fetchTips(); fetchStats() }
         if (msg.type === 'SHOW_STATUS') setQueueOpen(msg.queueOpen)
         if (msg.type === 'NOW_PLAYING') { setNowPlayingText(msg.nowPlaying || ''); setNowPlayingInput(msg.nowPlaying || '') }
+        if (msg.type === 'VOTE_UPDATE') fetchVotes(profile?.slug)
       } catch { fetchAll() }
     }
     return () => wsRef.current?.close()
@@ -252,6 +269,32 @@ export default function Dashboard() {
       else setError(data.error || 'Could not start Stripe setup')
     } catch { setError('Network error') }
     finally { setConnectingStripe(false) }
+  }
+
+  const saveGenreVoteSettings = async (enabled, options) => {
+    await fetch('/api/show/genre-vote', { method: 'PUT', headers, body: JSON.stringify({ enabled, options }) })
+  }
+
+  const toggleGenreVoteEnabled = async () => {
+    const next = !genreVoteEnabled
+    setGenreVoteEnabled(next)
+    await saveGenreVoteSettings(next, genreVoteOptions)
+    if (next && profile?.slug) fetchVotes(profile.slug)
+  }
+
+  const toggleGenreOption = async (genre) => {
+    const next = genreVoteOptions.includes(genre)
+      ? genreVoteOptions.filter(g => g !== genre)
+      : [...genreVoteOptions, genre]
+    setGenreVoteOptions(next)
+    await saveGenreVoteSettings(genreVoteEnabled, next)
+  }
+
+  const resetVotes = async () => {
+    setResetingVotes(true)
+    await fetch('/api/votes', { method: 'DELETE', headers })
+    setVoteResults([])
+    setResetingVotes(false)
   }
 
   const toggleQueue = async () => {
@@ -371,32 +414,70 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="card" style={{ marginBottom: '16px', padding: '12px 16px' }}>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+
+        <div className="card" style={{ marginBottom: '16px', padding: '14px 16px' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: genreVoteEnabled ? '14px' : 0 }}>
             <button onClick={toggleQueue} disabled={togglingQueue}
-              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', minHeight: '38px',
                 background: queueOpen ? 'rgba(0,255,136,0.08)' : 'rgba(255,91,91,0.08)',
                 borderColor: queueOpen ? 'rgba(0,255,136,0.35)' : 'rgba(255,91,91,0.35)',
                 color: queueOpen ? 'var(--neon)' : 'var(--red)' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: queueOpen ? 'var(--neon)' : 'var(--red)', display: 'inline-block', flexShrink: 0 }} />
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: queueOpen ? 'var(--neon)' : 'var(--red)', display: 'inline-block', flexShrink: 0 }} />
               {queueOpen ? 'Queue Open' : 'Queue Closed'}
             </button>
-            <div style={{ flex: 1, display: 'flex', gap: '6px', minWidth: '200px' }}>
-              <input
-                placeholder="Now playing..."
-                value={nowPlayingInput}
-                onChange={e => setNowPlayingInput(e.target.value.slice(0, 80))}
-                onKeyDown={e => e.key === 'Enter' && saveNowPlaying()}
-                style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }}
-              />
-              <button onClick={() => saveNowPlaying()} disabled={savingNowPlaying} className="btn-secondary" style={{ padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+            <button onClick={toggleGenreVoteEnabled}
+              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', minHeight: '38px',
+                background: genreVoteEnabled ? 'rgba(139,92,246,0.1)' : 'var(--surface2)',
+                borderColor: genreVoteEnabled ? 'rgba(139,92,246,0.4)' : 'var(--border)',
+                color: genreVoteEnabled ? 'var(--purple)' : 'var(--muted)' }}>
+              🎭 {genreVoteEnabled ? 'Vibe Vote On' : 'Vibe Vote Off'}
+            </button>
+            <div style={{ flex: 1, display: 'flex', gap: '6px', minWidth: '180px' }}>
+              <input placeholder="Now playing..." value={nowPlayingInput} onChange={e => setNowPlayingInput(e.target.value.slice(0, 80))} onKeyDown={e => e.key === 'Enter' && saveNowPlaying()} style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }} />
+              <button onClick={() => saveNowPlaying()} disabled={savingNowPlaying} className="btn-secondary" style={{ padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap', minHeight: '38px' }}>
                 {savingNowPlaying ? '...' : 'Set'}
               </button>
-              {nowPlayingText && (
-                <button onClick={() => { setNowPlayingInput(''); saveNowPlaying('') }} className="btn-secondary" style={{ padding: '8px 10px', fontSize: '12px' }}>✕</button>
-              )}
+              {nowPlayingText && <button onClick={() => { setNowPlayingInput(''); saveNowPlaying('') }} className="btn-secondary" style={{ padding: '8px 10px', fontSize: '12px', minHeight: '38px' }}>✕</button>}
             </div>
           </div>
+
+          {genreVoteEnabled && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                <p style={{ fontSize: '12px', fontWeight: 700, color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>🎭 Pick genres fans can vote on</p>
+                {voteResults.length > 0 && (
+                  <button onClick={resetVotes} disabled={resetingVotes} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--muted)', fontSize: '11px', fontWeight: 600, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', minHeight: '28px' }}>
+                    {resetingVotes ? '...' : 'Reset Votes'}
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: voteResults.length > 0 ? '14px' : 0 }}>
+                {GENRES.map(g => (
+                  <button key={g} onClick={() => toggleGenreOption(g)}
+                    className={'chip' + (genreVoteOptions.includes(g) ? ' active' : '')}
+                    style={{ minHeight: '30px' }}>
+                    {g}
+                  </button>
+                ))}
+              </div>
+              {voteResults.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Live results</p>
+                  {voteResults.map((v, i) => (
+                    <div key={v.genre}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: i === 0 ? 700 : 500, color: i === 0 ? 'var(--neon)' : 'var(--text-secondary)' }}>{i === 0 ? '🥇 ' : ''}{v.genre}</span>
+                        <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{v.count} vote{v.count !== 1 ? 's' : ''} · {v.pct}%</span>
+                      </div>
+                      <div className="vote-bar-track">
+                        <div className={'vote-bar-fill' + (i === 0 ? ' leader' : '')} style={{ width: v.pct + '%' }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: '2px', marginBottom: '24px', background: 'var(--surface)', padding: '3px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flexWrap: 'wrap' }}>

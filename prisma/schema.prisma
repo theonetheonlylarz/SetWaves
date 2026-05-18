@@ -27,12 +27,15 @@ model User {
   queueOpen             Boolean      @default(true)
   nowPlaying            String?
   pendingEarningsCents  Int          @default(0)
+  genreVoteEnabled      Boolean      @default(false)
+  genreVoteOptions      String       @default("[]")
   createdAt             DateTime     @default(now())
   songs                 Song[]
   queue                 QueueItem[]
   shoutouts             Shoutout[]
   tokenGrants           TokenGrant[]
   tips                  Tip[]
+  genreVotes            GenreVote[]
 }
 
 model Fan {
@@ -110,6 +113,18 @@ model TokenPackage {
   price       Int
   description String   @default("")
   createdAt   DateTime @default(now())
+}
+
+model GenreVote {
+  id        String   @id @default(uuid())
+  genre     String
+  voterKey  String
+  fanId     String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([voterKey, userId])
 }
 
 model TokenGrant {

@@ -192,6 +192,7 @@ app.get('/api/profile', auth, async (req, res) => {
     shoutoutCost: user.shoutoutCost, tipCost: user.tipCost,
     queueOpen: user.queueOpen, nowPlaying: user.nowPlaying,
     pendingEarningsCents: user.pendingEarningsCents,
+    genreVoteEnabled: user.genreVoteEnabled, genreVoteOptions: user.genreVoteOptions,
     stripeEnabled: !!stripeInstance });
 });
 
@@ -360,7 +361,8 @@ app.get('/api/show/:slug', async (req, res) => {
       maxJumpsPerSession: user.maxJumpsPerSession, playNextCost: user.playNextCost,
       maxPlayNextPerSession: user.maxPlayNextPerSession, shoutoutCost: user.shoutoutCost,
       stripeOnboarded: user.stripeOnboarded, stripeEnabled: !!stripeInstance,
-      tipCost: user.tipCost, queueOpen: user.queueOpen, nowPlaying: user.nowPlaying });
+      tipCost: user.tipCost, queueOpen: user.queueOpen, nowPlaying: user.nowPlaying,
+      genreVoteEnabled: user.genreVoteEnabled, genreVoteOptions: user.genreVoteOptions });
   } catch (e) { console.error('Show error:', e.message); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -500,6 +502,65 @@ app.get('/api/qrcode', auth, async (req, res) => {
   const url = CLIENT_URL + '/show/' + user.slug;
   const qrCode = await QRCode.toDataURL(url, { width: 300, margin: 2 });
   res.json({ qrCode, url });
+});
+
+// -- GENRE VOTING --
+
+app.put('/api/show/genre-vote', auth, async (req, res) => {
+  try {
+    const data = {};
+    if (typeof req.body.enabled === 'boolean') data.genreVoteEnabled = req.body.enabled;
+    if (Array.isArray(req.body.options)) data.genreVoteOptions = JSON.stringify(req.body.options.slice(0, 12));
+    const user = await prisma.user.update({ where: { id: req.userId }, data });
+    broadcast(req.userId, { type: 'VOTE_UPDATE' });
+    broadcast(user.slug, { type: 'VOTE_UPDATE' });
+    res.json({ genreVoteEnabled: user.genreVoteEnabled, genreVoteOptions: user.genreVoteOptions });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/votes/:slug', async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    const rows = await prisma.genreVote.groupBy({
+      by: ['genre'], where: { userId: user.id }, _count: { genre: true },
+      orderBy: { _count: { genre: 'desc' } }
+    });
+    const total = rows.reduce((s, r) => s + r._count.genre, 0);
+    res.json({ votes: rows.map(r => ({ genre: r.genre, count: r._count.genre, pct: total ? Math.round(r._count.genre / total * 100) : 0 })), total });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/votes/:slug', async (req, res) => {
+  const { genre, voterKey } = req.body;
+  if (!genre || !voterKey) return res.status(400).json({ error: 'genre and voterKey required' });
+  const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  if (!user.genreVoteEnabled) return res.status(403).json({ error: 'Voting is not enabled' });
+  let options = [];
+  try { options = JSON.parse(user.genreVoteOptions); } catch {}
+  if (!options.includes(genre)) return res.status(400).json({ error: 'Invalid genre' });
+  const fanId = optionalFanId(req);
+  try {
+    await prisma.genreVote.upsert({
+      where: { voterKey_userId: { voterKey, userId: user.id } },
+      update: { genre, fanId: fanId || null },
+      create: { genre, voterKey, fanId: fanId || null, userId: user.id }
+    });
+    broadcast(user.id, { type: 'VOTE_UPDATE' });
+    broadcast(user.slug, { type: 'VOTE_UPDATE' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/votes', auth, async (req, res) => {
+  try {
+    await prisma.genreVote.deleteMany({ where: { userId: req.userId } });
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    broadcast(req.userId, { type: 'VOTE_UPDATE' });
+    if (user) broadcast(user.slug, { type: 'VOTE_UPDATE' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // -- COIN PACKAGES --

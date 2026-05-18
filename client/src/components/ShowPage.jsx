@@ -68,6 +68,14 @@ export default function ShowPage() {
   const [sendingTip, setSendingTip] = useState(false)
   const [tipSuccess, setTipSuccess] = useState(false)
   const [packages, setPackages] = useState([])
+  const [voteResults, setVoteResults] = useState([])
+  const [myVote, setMyVote] = useState(() => { try { return localStorage.getItem('nextup_vote_' + slug) || null } catch { return null } })
+  const [castingVote, setCastingVote] = useState(null)
+  const [voterKey] = useState(() => {
+    const k = 'nextup_vk_' + slug
+    try { let v = localStorage.getItem(k); if (!v) { v = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem(k, v) } return v }
+    catch { return Math.random().toString(36).slice(2) }
+  })
   const wsRef = useRef(null)
 
   useEffect(() => { storeCoins(coins) }, [coins])
@@ -98,7 +106,10 @@ export default function ShowPage() {
   const fetchShow = async () => {
     try { const res = await fetch('/api/show/' + slug); if (res.ok) setShow(await res.json()) } catch {}
   }
-  useEffect(() => { fetchShow() }, [slug])
+  const fetchVotes = async () => {
+    try { const res = await fetch('/api/votes/' + slug); if (res.ok) { const d = await res.json(); setVoteResults(d.votes || []) } } catch {}
+  }
+  useEffect(() => { fetchShow(); fetchVotes() }, [slug])
 
   useEffect(() => {
     const grantId = params.get('grant')
@@ -150,6 +161,7 @@ export default function ShowPage() {
         const msg = JSON.parse(evt.data)
         if (msg.type === 'QUEUE_UPDATE' || !msg.type) { fetchShow(); refreshFanBalance() }
         if (msg.type === 'SHOW_STATUS' || msg.type === 'NOW_PLAYING') fetchShow()
+        if (msg.type === 'VOTE_UPDATE') fetchVotes()
       } catch { fetchShow() }
     }
     return () => wsRef.current?.close()
@@ -256,6 +268,17 @@ export default function ShowPage() {
       setShoutoutSuccess(true); setTimeout(() => setShoutoutSuccess(false), 5000)
     } catch (err) { setError(err.message) }
     finally { setSendingShoutout(false) }
+  }
+
+  const castVote = async (genre) => {
+    setCastingVote(genre)
+    try {
+      const h = { 'Content-Type': 'application/json' }
+      if (fanToken) h['Authorization'] = 'Bearer ' + fanToken
+      const res = await fetch('/api/votes/' + slug, { method: 'POST', headers: h, body: JSON.stringify({ genre, voterKey }) })
+      if (res.ok) { setMyVote(genre); try { localStorage.setItem('nextup_vote_' + slug, genre) } catch {}; fetchVotes() }
+    } catch {}
+    setCastingVote(null)
   }
 
   const handleTip = async () => {
@@ -388,6 +411,46 @@ export default function ShowPage() {
         {shoutoutSuccess && (<div style={{ background: 'rgba(139,92,246,0.08)', border: '1.5px solid rgba(139,92,246,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: '#a78bfa', fontWeight: 700, fontSize: '16px' }}>📣 Shoutout sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>The performer will see your message!</p></div>)}
         {tipSuccess && (<div style={{ background: 'rgba(234,179,8,0.08)', border: '1.5px solid rgba(234,179,8,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: '#eab308', fontWeight: 700, fontSize: '16px' }}>💰 Tip sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>Thanks for supporting the performer!</p></div>)}
         {error && <div className="error" style={{ marginBottom: '14px' }}>{error}</div>}
+
+        {show.genreVoteEnabled && (() => {
+          let opts = []
+          try { opts = JSON.parse(show.genreVoteOptions || '[]') } catch {}
+          const total = voteResults.reduce((s, v) => s + v.count, 0)
+          return (
+            <div className="card" style={{ marginBottom: '20px', borderColor: 'rgba(139,92,246,0.2)', background: 'linear-gradient(135deg, rgba(139,92,246,0.05) 0%, var(--surface) 100%)' }}>
+              <div style={{ marginBottom: '14px' }}>
+                <p style={{ fontWeight: 800, fontSize: '16px', marginBottom: '4px' }}>🎭 Vote for Tonight's Vibe</p>
+                <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Pick a genre — the performer plays what wins{total > 0 ? ' · ' + total + ' vote' + (total !== 1 ? 's' : '') + ' so far' : ''}</p>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: voteResults.length > 0 ? '16px' : 0 }}>
+                {opts.map(g => (
+                  <button key={g} onClick={() => castVote(g)} disabled={!!castingVote}
+                    className={'chip' + (myVote === g ? ' vote-active' : '')}
+                    style={{ fontSize: '14px', padding: '8px 18px', minHeight: '38px', fontWeight: myVote === g ? 800 : 600 }}>
+                    {castingVote === g ? '...' : myVote === g ? '✓ ' + g : g}
+                  </button>
+                ))}
+              </div>
+              {voteResults.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+                  {voteResults.map((v, i) => (
+                    <div key={v.genre}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: i === 0 ? 700 : 500, color: i === 0 ? 'var(--neon)' : 'var(--text-secondary)' }}>
+                          {i === 0 ? '🥇 ' : ''}{v.genre}{myVote === v.genre ? ' ← your vote' : ''}
+                        </span>
+                        <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600 }}>{v.pct}%</span>
+                      </div>
+                      <div className="vote-bar-track">
+                        <div className={'vote-bar-fill' + (i === 0 ? ' leader' : '')} style={{ width: v.pct + '%' }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {buyMode ? (
           <div className="card" style={{ marginBottom: '24px' }}>

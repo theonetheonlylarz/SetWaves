@@ -49,6 +49,14 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       } catch (e) { console.error('Coin grant error:', e.message); }
     }
   }
+  if (event.type === 'account.updated') {
+    const account = event.data.object;
+    if (account.charges_enabled && account.details_submitted) {
+      try {
+        await prisma.user.updateMany({ where: { stripeAccountId: account.id }, data: { stripeOnboarded: true } });
+      } catch (e) { console.error('Account update error:', e.message); }
+    }
+  }
   res.json({ received: true });
 });
 
@@ -182,7 +190,8 @@ app.get('/api/profile', auth, async (req, res) => {
     queueJumpCost: user.queueJumpCost, maxJumpsPerSession: user.maxJumpsPerSession,
     playNextCost: user.playNextCost, maxPlayNextPerSession: user.maxPlayNextPerSession,
     shoutoutCost: user.shoutoutCost, tipCost: user.tipCost,
-    queueOpen: user.queueOpen, nowPlaying: user.nowPlaying });
+    queueOpen: user.queueOpen, nowPlaying: user.nowPlaying,
+    stripeEnabled: !!stripeInstance });
 });
 
 app.put('/api/profile', auth, async (req, res) => {
@@ -500,13 +509,34 @@ app.get('/api/packages/:slug', async (req, res) => {
 app.post('/api/stripe/connect', auth, async (req, res) => {
   if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
   try {
-    const account = await stripeInstance.accounts.create({ type: 'express' });
-    await prisma.user.update({ where: { id: req.userId }, data: { stripeAccountId: account.id } });
+    let user = await prisma.user.findUnique({ where: { id: req.userId } });
+    let accountId = user.stripeAccountId;
+    if (!accountId) {
+      const account = await stripeInstance.accounts.create({ type: 'express' });
+      accountId = account.id;
+      await prisma.user.update({ where: { id: req.userId }, data: { stripeAccountId: accountId } });
+    }
     const link = await stripeInstance.accountLinks.create({
-      account: account.id, refresh_url: CLIENT_URL + '/dashboard?stripe=refresh',
-      return_url: CLIENT_URL + '/dashboard?stripe=success', type: 'account_onboarding'
+      account: accountId,
+      refresh_url: CLIENT_URL + '/dashboard?stripe=refresh',
+      return_url: CLIENT_URL + '/dashboard?stripe=success',
+      type: 'account_onboarding',
     });
     res.json({ url: link.url });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/stripe/status', auth, async (req, res) => {
+  if (!stripeInstance) return res.json({ connected: false, onboarded: false });
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user.stripeAccountId) return res.json({ connected: false, onboarded: false });
+    const account = await stripeInstance.accounts.retrieve(user.stripeAccountId);
+    const onboarded = !!(account.charges_enabled && account.details_submitted);
+    if (onboarded !== user.stripeOnboarded) {
+      await prisma.user.update({ where: { id: req.userId }, data: { stripeOnboarded: onboarded } });
+    }
+    res.json({ connected: true, onboarded, chargesEnabled: account.charges_enabled, detailsSubmitted: account.details_submitted });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

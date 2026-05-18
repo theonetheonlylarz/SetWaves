@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 const Spinner = () => (
   <div style={{ width: '32px', height: '32px', border: '3px solid var(--border)', borderTopColor: 'var(--neon)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
@@ -42,7 +42,12 @@ export default function Dashboard() {
   const [nowPlayingInput, setNowPlayingInput] = useState('')
   const [nowPlayingText, setNowPlayingText] = useState('')
   const [savingNowPlaying, setSavingNowPlaying] = useState(false)
+  const [stripeEnabled, setStripeEnabled] = useState(false)
+  const [stripeOnboarded, setStripeOnboarded] = useState(false)
+  const [connectingStripe, setConnectingStripe] = useState(false)
+  const [stripeStatusMsg, setStripeStatusMsg] = useState('')
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const wsRef = useRef(null)
   const token = localStorage.getItem('token')
   const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
@@ -69,6 +74,8 @@ export default function Dashboard() {
       setMaxPlayNext(profileData.maxPlayNextPerSession ?? 1)
       setShoutoutCost(profileData.shoutoutCost ?? 10)
       setTipCostSetting(profileData.tipCost ?? 5)
+      setStripeEnabled(profileData.stripeEnabled ?? false)
+      setStripeOnboarded(profileData.stripeOnboarded ?? false)
       setQueueOpen(profileData.queueOpen ?? true)
       setNowPlayingText(profileData.nowPlaying || '')
       setNowPlayingInput(profileData.nowPlaying || '')
@@ -105,6 +112,27 @@ export default function Dashboard() {
     fetchShoutouts()
     fetchStats()
     fetchTips()
+  }, [])
+
+  useEffect(() => {
+    const stripeParam = searchParams.get('stripe')
+    if (!stripeParam) return
+    const next = new URLSearchParams(searchParams); next.delete('stripe'); setSearchParams(next, { replace: true })
+    if (stripeParam === 'success') {
+      fetch('/api/stripe/status', { headers })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.onboarded) { setStripeOnboarded(true); setStripeStatusMsg('Payment account connected!') }
+          else { setStripeStatusMsg('Setup started — finish in your email from Stripe to start receiving payouts.') }
+        }).catch(() => {})
+    }
+    if (stripeParam === 'refresh') {
+      fetch('/api/stripe/connect', { method: 'POST', headers })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data?.url) window.location.href = data.url })
+        .catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -200,6 +228,17 @@ export default function Dashboard() {
     fetchAll()
   }
 
+  const connectStripe = async () => {
+    setConnectingStripe(true)
+    try {
+      const res = await fetch('/api/stripe/connect', { method: 'POST', headers })
+      const data = await res.json()
+      if (data.url) window.location.href = data.url
+      else setError(data.error || 'Could not start Stripe setup')
+    } catch { setError('Network error') }
+    finally { setConnectingStripe(false) }
+  }
+
   const toggleQueue = async () => {
     setTogglingQueue(true)
     const next = !queueOpen
@@ -291,6 +330,31 @@ export default function Dashboard() {
 
       <main style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 20px' }}>
         {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+
+        {stripeStatusMsg && (
+          <div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.25)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '14px' }}>✅ {stripeStatusMsg}</span>
+            <button onClick={() => setStripeStatusMsg('')} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '18px', cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>×</button>
+          </div>
+        )}
+
+        {stripeEnabled && !stripeOnboarded && (
+          <div style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.08) 100%)', border: '1.5px solid rgba(99,102,241,0.35)', borderRadius: 'var(--radius-md)', padding: '20px 22px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ fontWeight: 800, fontSize: '16px', color: 'var(--text)', marginBottom: '6px' }}>💳 Connect your payout account</p>
+                <p style={{ color: 'var(--muted)', fontSize: '13px', lineHeight: '1.5' }}>
+                  Link a bank account or debit card to receive payouts from fan coin purchases.<br />
+                  <span style={{ color: '#a78bfa', fontWeight: 700 }}>You keep 90% of every transaction.</span> Powered by Stripe — takes ~2 minutes.
+                </p>
+              </div>
+              <button onClick={connectStripe} disabled={connectingStripe}
+                style={{ background: 'rgba(99,102,241,0.15)', border: '1.5px solid rgba(99,102,241,0.5)', borderRadius: '10px', color: '#818cf8', fontWeight: 800, fontSize: '14px', padding: '11px 22px', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0, transition: 'all 0.15s' }}>
+                {connectingStripe ? '⏳ Redirecting...' : '→ Set Up Payments'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="card" style={{ marginBottom: '16px', padding: '12px 16px' }}>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -564,7 +628,7 @@ export default function Dashboard() {
 
             <div className="card">
               <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Song Request Pricing</h3>
-              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '18px' }}>Set coin costs for each tier (1 coin = $1 · you keep 90%)</p>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '18px' }}>Set coin costs for each tier · 1 coin = $1 · <span style={{ color: 'var(--neon)', fontWeight: 700 }}>you keep 90%</span>, platform takes 10%</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -605,6 +669,36 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+
+            {stripeEnabled && (
+              <div className="card">
+                <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Payouts</h3>
+                <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '16px' }}>
+                  You keep <span style={{ color: 'var(--neon)', fontWeight: 700 }}>90%</span> of every coin purchase. Payouts go to your connected bank or debit card via Stripe.
+                </p>
+                {stripeOnboarded ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,255,136,0.07)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: '8px', padding: '9px 14px', flex: 1 }}>
+                      <span style={{ color: 'var(--neon)', fontSize: '16px' }}>✅</span>
+                      <span style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '13px' }}>Payout account connected</span>
+                    </div>
+                    <button onClick={connectStripe} disabled={connectingStripe} className="btn-secondary" style={{ fontSize: '12px', padding: '9px 14px', whiteSpace: 'nowrap' }}>
+                      {connectingStripe ? '...' : 'Update'}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', padding: '9px 14px', flex: 1 }}>
+                      <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '13px' }}>⚠️ No payout account — fans can buy coins but funds won't transfer to you yet.</span>
+                    </div>
+                    <button onClick={connectStripe} disabled={connectingStripe}
+                      style={{ background: 'rgba(99,102,241,0.12)', border: '1.5px solid rgba(99,102,241,0.4)', borderRadius: '9px', color: '#818cf8', fontWeight: 700, fontSize: '13px', padding: '9px 18px', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {connectingStripe ? '⏳ Redirecting...' : '→ Connect Account'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="card">
               <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Your Show Link</h3>

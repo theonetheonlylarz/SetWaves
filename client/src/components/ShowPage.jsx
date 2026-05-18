@@ -640,7 +640,7 @@ export default function ShowPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: show.queueOpen ? '12px' : 0 }}>
                   {filteredSongs.map(song => (
                     <button key={song.id}
-                      onClick={() => { if (!show.queueOpen) return; setSelectedSong(song.title); setCustomSong(''); setError(''); setRequestOpen(true) }}
+                      onClick={() => { if (!show.queueOpen) return; if (!hasEnough) { openBuyMode(); return; } setSelectedSong(song.title); setCustomSong(''); setError(''); setRequestOpen(true) }}
                       style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', cursor: show.queueOpen ? 'pointer' : 'default', transition: 'all 0.15s', textAlign: 'left', fontFamily: 'inherit', width: '100%', opacity: show.queueOpen ? 1 : 0.5 }}
                       onMouseEnter={e => { if (show.queueOpen) { e.currentTarget.style.borderColor = 'rgba(0,255,136,0.4)'; e.currentTarget.style.background = 'rgba(0,255,136,0.04)' } }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--surface2)' }}>
@@ -663,7 +663,7 @@ export default function ShowPage() {
               )}
 
               {show.queueOpen && (
-                <button onClick={() => { setSelectedSong(''); setCustomSong(''); setError(''); setRequestOpen(true) }}
+                <button onClick={() => { if (!hasEnough) { openBuyMode(); return; } setSelectedSong(''); setCustomSong(''); setError(''); setRequestOpen(true) }}
                   style={{ width: '100%', padding: '11px', fontSize: '13px', fontWeight: 700, borderRadius: 'var(--radius-md)', background: 'transparent', border: '1.5px dashed var(--border)', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(0,255,136,0.35)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--muted)' }}>

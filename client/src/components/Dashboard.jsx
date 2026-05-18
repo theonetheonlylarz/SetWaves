@@ -298,10 +298,16 @@ export default function Dashboard() {
   }
 
   const toggleQueue = async () => {
-    setTogglingQueue(true)
     const next = !queueOpen
+    if (next && stripeEnabled && !stripeOnboarded) {
+      setError('Connect your payout account first — fans need somewhere for their money to go.')
+      return
+    }
+    setTogglingQueue(true)
     setQueueOpen(next)
-    await fetch('/api/show/status', { method: 'PUT', headers, body: JSON.stringify({ queueOpen: next }) })
+    const res = await fetch('/api/show/status', { method: 'PUT', headers, body: JSON.stringify({ queueOpen: next }) })
+    const data = await res.json()
+    if (!res.ok) { setQueueOpen(!next); setError(data.error || 'Failed to update queue status') }
     setTogglingQueue(false)
   }
 
@@ -417,14 +423,20 @@ export default function Dashboard() {
 
         <div className="card" style={{ marginBottom: '16px', padding: '14px 16px' }}>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: genreVoteEnabled ? '14px' : 0 }}>
-            <button onClick={toggleQueue} disabled={togglingQueue}
-              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', minHeight: '38px',
-                background: queueOpen ? 'rgba(0,255,136,0.08)' : 'rgba(255,91,91,0.08)',
-                borderColor: queueOpen ? 'rgba(0,255,136,0.35)' : 'rgba(255,91,91,0.35)',
-                color: queueOpen ? 'var(--neon)' : 'var(--red)' }}>
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: queueOpen ? 'var(--neon)' : 'var(--red)', display: 'inline-block', flexShrink: 0 }} />
-              {queueOpen ? 'Queue Open' : 'Queue Closed'}
-            </button>
+            {(() => {
+              const stripeBlocked = stripeEnabled && !stripeOnboarded && !queueOpen
+              return (
+                <button onClick={toggleQueue} disabled={togglingQueue}
+                  title={stripeBlocked ? 'Connect a payout account to open the queue' : undefined}
+                  style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', minHeight: '38px',
+                    background: stripeBlocked ? 'rgba(245,158,11,0.08)' : queueOpen ? 'rgba(0,255,136,0.08)' : 'rgba(255,91,91,0.08)',
+                    borderColor: stripeBlocked ? 'rgba(245,158,11,0.4)' : queueOpen ? 'rgba(0,255,136,0.35)' : 'rgba(255,91,91,0.35)',
+                    color: stripeBlocked ? 'var(--amber)' : queueOpen ? 'var(--neon)' : 'var(--red)' }}>
+                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: stripeBlocked ? 'var(--amber)' : queueOpen ? 'var(--neon)' : 'var(--red)', display: 'inline-block', flexShrink: 0 }} />
+                  {stripeBlocked ? '⚠️ Setup Required' : queueOpen ? 'Queue Open' : 'Queue Closed'}
+                </button>
+              )
+            })()}
             <button onClick={toggleGenreVoteEnabled}
               style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', minHeight: '38px',
                 background: genreVoteEnabled ? 'rgba(139,92,246,0.1)' : 'var(--surface2)',

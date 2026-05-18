@@ -228,10 +228,14 @@ app.put('/api/pricing', auth, async (req, res) => {
 app.put('/api/show/status', auth, async (req, res) => {
   const { queueOpen } = req.body;
   if (typeof queueOpen !== 'boolean') return res.status(400).json({ error: 'queueOpen must be boolean' });
-  const user = await prisma.user.update({ where: { id: req.userId }, data: { queueOpen } });
+  const user = await prisma.user.findUnique({ where: { id: req.userId } });
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  if (queueOpen && stripeInstance && !user.stripeOnboarded)
+    return res.status(402).json({ error: 'Connect a payout account before opening the queue' });
+  const updated = await prisma.user.update({ where: { id: req.userId }, data: { queueOpen } });
   broadcast(req.userId, { type: 'SHOW_STATUS', queueOpen });
-  broadcast(user.slug, { type: 'SHOW_STATUS', queueOpen });
-  res.json({ queueOpen: user.queueOpen });
+  broadcast(updated.slug, { type: 'SHOW_STATUS', queueOpen });
+  res.json({ queueOpen: updated.queueOpen });
 });
 
 app.put('/api/now-playing', auth, async (req, res) => {

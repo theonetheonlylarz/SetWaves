@@ -259,7 +259,7 @@ export default function ShowPage() {
       if (fanToken) reqHeaders['Authorization'] = 'Bearer ' + fanToken
       const res = await fetch('/api/shoutout/' + slug, {
         method: 'POST', headers: reqHeaders,
-        body: JSON.stringify({ message: shoutoutMsg.trim(), fromName: shoutoutName.trim() || 'Anonymous' })
+        body: JSON.stringify({ message: shoutoutMsg.trim(), fromName: (requester.trim() || shoutoutName.trim()) || 'Anonymous' })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -513,7 +513,19 @@ export default function ShowPage() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <input placeholder="Your name (optional)" value={requester} onChange={e => setRequester(e.target.value)} />
-                  {availableGenres.length > 2 && (<div><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}><div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>{availableGenres.map(g => (<button key={g} onClick={() => setGenreFilter(g)} style={{ padding: '4px 11px', fontSize: '12px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', background: genreFilter === g ? 'var(--neon-dim)' : 'var(--surface2)', border: '1px solid ' + (genreFilter === g ? 'rgba(0,255,136,0.3)' : 'var(--border)'), color: genreFilter === g ? 'var(--neon)' : 'var(--muted)', transition: 'all 0.15s' }}>{g}</button>))}</div><button onClick={() => setSortAZ(v => !v)} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, marginLeft: '6px', background: sortAZ ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1px solid ' + (sortAZ ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: sortAZ ? '#a78bfa' : 'var(--muted)', transition: 'all 0.15s' }}>A-Z</button></div></div>)}
+                  {availableGenres.length > 1 && (
+                    <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius-sm)', padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Browse by Genre</label>
+                        <button onClick={() => setSortAZ(v => !v)} style={{ padding: '3px 10px', fontSize: '11px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, background: sortAZ ? 'rgba(139,92,246,0.12)' : 'transparent', border: '1px solid ' + (sortAZ ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: sortAZ ? '#a78bfa' : 'var(--muted)', transition: 'all 0.15s' }}>A–Z</button>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {availableGenres.map(g => (
+                          <button key={g} onClick={() => setGenreFilter(g)} style={{ padding: '5px 13px', fontSize: '12px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', background: genreFilter === g ? 'var(--neon-dim)' : 'var(--surface)', border: '1.5px solid ' + (genreFilter === g ? 'rgba(0,255,136,0.4)' : 'var(--border)'), color: genreFilter === g ? 'var(--neon)' : 'var(--text-secondary)', transition: 'all 0.15s', minHeight: '30px' }}>{g}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {filteredSongs.length > 0 && (<select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}><option value="">Pick from setlist...</option>{filteredSongs.map(s => (<option key={s.id} value={s.title}>{s.title}{s.artist ? ' - ' + s.artist : ''}</option>))}</select>)}
                   <input placeholder={show.songs?.length > 0 ? 'Or type any song...' : 'Song title...'} value={customSong} onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }} />
                   <div>
@@ -527,6 +539,17 @@ export default function ShowPage() {
                   </div>
                   {submitting && (<div style={{ textAlign: 'center', padding: '8px' }}><Spinner /></div>)}
                 </div>
+                <div style={{ borderTop: '1px solid var(--border)', marginTop: '18px', paddingTop: '16px' }}>
+                  <p style={{ fontSize: '12px', fontWeight: 700, color: '#a78bfa', marginBottom: '10px' }}>
+                    📣 Add a Shoutout <span style={{ color: 'var(--muted)', fontWeight: 500 }}>(optional · 🪙 {shoutoutCost} coins)</span>
+                  </p>
+                  <textarea placeholder="Send the performer a message alongside your request..." value={shoutoutMsg} onChange={e => setShoutoutMsg(e.target.value.slice(0, 120))} rows={2} style={{ resize: 'vertical', minHeight: '60px' }} />
+                  {shoutoutMsg.trim() && (
+                    <button type="button" onClick={handleShoutout} disabled={sendingShoutout || !canShoutout} style={{ marginTop: '8px', padding: '11px', fontSize: '13px', borderRadius: '10px', width: '100%', background: canShoutout ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1.5px solid ' + (canShoutout ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: canShoutout ? '#a78bfa' : 'var(--muted)', fontWeight: 700, cursor: canShoutout ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
+                      {sendingShoutout ? '⏳ Sending...' : canShoutout ? '📣 Send Shoutout · 🪙 ' + shoutoutCost : 'Need ' + shoutoutCost + ' coins for a shoutout'}
+                    </button>
+                  )}
+                </div>
                 <div style={{ textAlign: 'center', marginTop: '12px' }}><button onClick={() => { openBuyMode() }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>
               </div>
             ) : (
@@ -537,7 +560,7 @@ export default function ShowPage() {
                 <button onClick={() => { openBuyMode() }} className="btn-primary" style={{ padding: '13px 32px', fontSize: '15px' }}>🪙 Get Coins</button>
               </div>
             ) /* end !queueOpen / hasEnough */}
-            <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(139,92,246,0.15)' }}>
+            {(!show.queueOpen || !hasEnough) && <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(139,92,246,0.15)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
                 <div><h2 style={{ fontWeight: 800, fontSize: '17px' }}>📣 Send a Shoutout</h2><p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>Send a message to the performer · <span style={{ color: '#a78bfa', fontWeight: 700 }}>🪙 {shoutoutCost} coins</span></p></div>
                 {canShoutout && (<span style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.25)', whiteSpace: 'nowrap', flexShrink: 0 }}>🪙 {effectiveCoins} left</span>)}
@@ -550,7 +573,7 @@ export default function ShowPage() {
                 </button>
                 {!canShoutout && effectiveCoins < shoutoutCost && (<div style={{ textAlign: 'center' }}><button onClick={() => { openBuyMode() }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
               </div>
-            </div>
+            </div>}
 
             {(() => {
               const tipCost = show?.tipCost || 1

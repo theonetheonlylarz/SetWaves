@@ -26,6 +26,7 @@ model User {
   tipCost               Int          @default(5)
   queueOpen             Boolean      @default(true)
   nowPlaying            String?
+  pendingEarningsCents  Int          @default(0)
   createdAt             DateTime     @default(now())
   songs                 Song[]
   queue                 QueueItem[]

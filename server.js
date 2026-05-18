@@ -191,6 +191,7 @@ app.get('/api/profile', auth, async (req, res) => {
     playNextCost: user.playNextCost, maxPlayNextPerSession: user.maxPlayNextPerSession,
     shoutoutCost: user.shoutoutCost, tipCost: user.tipCost,
     queueOpen: user.queueOpen, nowPlaying: user.nowPlaying,
+    pendingEarningsCents: user.pendingEarningsCents,
     stripeEnabled: !!stripeInstance });
 });
 
@@ -318,8 +319,10 @@ app.put('/api/queue/:id/accept', auth, async (req, res) => {
       }
       await prisma.fan.update({ where: { id: item.fanId }, data: { coinBalance: { decrement: item.tokens } } });
     }
-    const updated = await prisma.queueItem.update({ where: { id: item.id }, data: { status: 'ACCEPTED' } });
-    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    const [updated, user] = await Promise.all([
+      prisma.queueItem.update({ where: { id: item.id }, data: { status: 'ACCEPTED' } }),
+      prisma.user.update({ where: { id: req.userId }, data: { pendingEarningsCents: { increment: item.tokens * 90 } } }),
+    ]);
     broadcast(req.userId, { type: 'QUEUE_UPDATE' });
     if (user) broadcast(user.slug, { type: 'QUEUE_UPDATE' });
     res.json(updated);
@@ -430,10 +433,15 @@ app.post('/api/shoutout/:slug', async (req, res) => {
     await prisma.fan.update({ where: { id: fanId }, data: { coinBalance: { decrement: user.shoutoutCost } } });
   }
   try {
-    const shoutout = await prisma.shoutout.create({
-      data: { message: message.trim(), fromName: (fromName || 'Anonymous').trim().slice(0, 40),
-        coins: user.shoutoutCost, fanId: fanId || null, userId: user.id }
-    });
+    const [shoutout] = await Promise.all([
+      prisma.shoutout.create({
+        data: { message: message.trim(), fromName: (fromName || 'Anonymous').trim().slice(0, 40),
+          coins: user.shoutoutCost, fanId: fanId || null, userId: user.id }
+      }),
+      user.shoutoutCost > 0
+        ? prisma.user.update({ where: { id: user.id }, data: { pendingEarningsCents: { increment: user.shoutoutCost * 90 } } })
+        : Promise.resolve(),
+    ]);
     broadcast(user.id, { type: 'SHOUTOUT_NEW' });
     res.json(shoutout);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -453,10 +461,13 @@ app.post('/api/tip/:slug', async (req, res) => {
     await prisma.fan.update({ where: { id: fanId }, data: { coinBalance: { decrement: coins } } });
   }
   try {
-    const tip = await prisma.tip.create({
-      data: { coins, fromName: (fromName || 'Anonymous').trim().slice(0, 40),
-        message: message ? message.trim().slice(0, 120) : null, fanId: fanId || null, userId: user.id }
-    });
+    const [tip] = await Promise.all([
+      prisma.tip.create({
+        data: { coins, fromName: (fromName || 'Anonymous').trim().slice(0, 40),
+          message: message ? message.trim().slice(0, 120) : null, fanId: fanId || null, userId: user.id }
+      }),
+      prisma.user.update({ where: { id: user.id }, data: { pendingEarningsCents: { increment: coins * 90 } } }),
+    ]);
     broadcast(user.id, { type: 'TIP_NEW' });
     res.json(tip);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -526,6 +537,25 @@ app.post('/api/stripe/connect', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/stripe/payout', auth, async (req, res) => {
+  if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user.stripeOnboarded || !user.stripeAccountId)
+      return res.status(400).json({ error: 'Connect a payout account first' });
+    if (!user.pendingEarningsCents || user.pendingEarningsCents < 100)
+      return res.status(400).json({ error: 'Minimum payout is $1.00' });
+    const transfer = await stripeInstance.transfers.create({
+      amount: user.pendingEarningsCents,
+      currency: 'usd',
+      destination: user.stripeAccountId,
+      description: 'SetWaves earnings payout',
+    });
+    await prisma.user.update({ where: { id: req.userId }, data: { pendingEarningsCents: 0 } });
+    res.json({ success: true, amountCents: transfer.amount, transferId: transfer.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/stripe/status', auth, async (req, res) => {
   if (!stripeInstance) return res.json({ connected: false, onboarded: false });
   try {
@@ -550,15 +580,11 @@ app.post('/api/stripe/checkout/:slug', async (req, res) => {
   try {
     const sessionParams = {
       payment_method_types: ['card'],
-      line_items: [{ price_data: { currency: 'usd', product_data: { name: coins + ' Coin' + (coins !== 1 ? 's' : '') + ' - Next Up' }, unit_amount: amountCents }, quantity: 1 }],
+      line_items: [{ price_data: { currency: 'usd', product_data: { name: coins + ' Coin' + (coins !== 1 ? 's' : '') + ' for ' + (user.displayName || 'Next Up') }, unit_amount: amountCents }, quantity: 1 }],
       mode: 'payment', metadata: { slug: user.slug, coins: String(coins) },
       success_url: CLIENT_URL + '/show/' + user.slug + '?grant={CHECKOUT_SESSION_ID}',
       cancel_url: CLIENT_URL + '/show/' + user.slug,
     };
-    if (user.stripeOnboarded && user.stripeAccountId) {
-      sessionParams.application_fee_amount = Math.floor(amountCents * 0.10);
-      sessionParams.transfer_data = { destination: user.stripeAccountId };
-    }
     const session = await stripeInstance.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e) { res.status(500).json({ error: e.message }); }

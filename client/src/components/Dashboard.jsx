@@ -45,6 +45,8 @@ export default function Dashboard() {
   const [stripeEnabled, setStripeEnabled] = useState(false)
   const [stripeOnboarded, setStripeOnboarded] = useState(false)
   const [connectingStripe, setConnectingStripe] = useState(false)
+  const [requestingPayout, setRequestingPayout] = useState(false)
+  const [pendingEarningsCents, setPendingEarningsCents] = useState(0)
   const [stripeStatusMsg, setStripeStatusMsg] = useState('')
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -76,6 +78,7 @@ export default function Dashboard() {
       setTipCostSetting(profileData.tipCost ?? 5)
       setStripeEnabled(profileData.stripeEnabled ?? false)
       setStripeOnboarded(profileData.stripeOnboarded ?? false)
+      setPendingEarningsCents(profileData.pendingEarningsCents ?? 0)
       setQueueOpen(profileData.queueOpen ?? true)
       setNowPlayingText(profileData.nowPlaying || '')
       setNowPlayingInput(profileData.nowPlaying || '')
@@ -226,6 +229,18 @@ export default function Dashboard() {
     setPricingSaved(true)
     setTimeout(() => setPricingSaved(false), 2500)
     fetchAll()
+  }
+
+  const requestPayout = async () => {
+    setRequestingPayout(true)
+    try {
+      const res = await fetch('/api/stripe/payout', { method: 'POST', headers })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error || 'Payout failed'); return }
+      setPendingEarningsCents(0)
+      setStripeStatusMsg('$' + (data.amountCents / 100).toFixed(2) + ' sent to your account! Expect it in 1–2 business days.')
+    } catch { setError('Network error') }
+    finally { setRequestingPayout(false) }
   }
 
   const connectStripe = async () => {
@@ -674,8 +689,32 @@ export default function Dashboard() {
               <div className="card">
                 <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Payouts</h3>
                 <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '16px' }}>
-                  You keep <span style={{ color: 'var(--neon)', fontWeight: 700 }}>90%</span> of every coin purchase. Payouts go to your connected bank or debit card via Stripe.
+                  You keep <span style={{ color: 'var(--neon)', fontWeight: 700 }}>90%</span> of every coin spent at your show. The platform takes 10%. Payouts go to your connected bank or debit card.
                 </p>
+
+                {pendingEarningsCents > 0 && (
+                  <div style={{ background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <p style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>Available to pay out</p>
+                      <p style={{ color: 'var(--neon)', fontWeight: 900, fontSize: '24px' }}>${(pendingEarningsCents / 100).toFixed(2)}</p>
+                    </div>
+                    {stripeOnboarded ? (
+                      <button onClick={requestPayout} disabled={requestingPayout}
+                        style={{ background: 'rgba(0,255,136,0.12)', border: '1.5px solid rgba(0,255,136,0.35)', borderRadius: '9px', color: 'var(--neon)', fontWeight: 800, fontSize: '14px', padding: '11px 22px', cursor: requestingPayout ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
+                        {requestingPayout ? '⏳ Sending...' : '→ Pay Out Now'}
+                      </button>
+                    ) : (
+                      <p style={{ color: '#f59e0b', fontSize: '12px', fontWeight: 600 }}>Connect a payout account below to withdraw</p>
+                    )}
+                  </div>
+                )}
+
+                {pendingEarningsCents === 0 && stripeOnboarded && (
+                  <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', marginBottom: '14px' }}>
+                    <p style={{ color: 'var(--muted)', fontSize: '13px' }}>$0.00 pending — earnings will appear here as fans spend coins at your show.</p>
+                  </div>
+                )}
+
                 {stripeOnboarded ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,255,136,0.07)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: '8px', padding: '9px 14px', flex: 1 }}>
@@ -689,7 +728,7 @@ export default function Dashboard() {
                 ) : (
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', padding: '9px 14px', flex: 1 }}>
-                      <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '13px' }}>⚠️ No payout account — fans can buy coins but funds won't transfer to you yet.</span>
+                      <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '13px' }}>⚠️ No payout account — earnings are accumulating but can't be transferred yet.</span>
                     </div>
                     <button onClick={connectStripe} disabled={connectingStripe}
                       style={{ background: 'rgba(99,102,241,0.12)', border: '1.5px solid rgba(99,102,241,0.4)', borderRadius: '9px', color: '#818cf8', fontWeight: 700, fontSize: '13px', padding: '9px 18px', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0 }}>

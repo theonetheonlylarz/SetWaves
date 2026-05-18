@@ -71,6 +71,7 @@ export default function ShowPage() {
   const [voteResults, setVoteResults] = useState([])
   const [myVote, setMyVote] = useState(() => { try { return localStorage.getItem('nextup_vote_' + slug) || null } catch { return null } })
   const [castingVote, setCastingVote] = useState(null)
+  const [requestOpen, setRequestOpen] = useState(false)
   const [voterKey] = useState(() => {
     const k = 'nextup_vk_' + slug
     try { let v = localStorage.getItem(k); if (!v) { v = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem(k, v) } return v }
@@ -244,7 +245,8 @@ export default function ShowPage() {
       if (tier === 'PRIORITY') { const next = jumpsUsed + 1; setJumpsUsed(next); try { localStorage.setItem('nextup_jumps_' + slug, String(next)) } catch {} }
       if (tier === 'PLAY_NEXT') { const next = playNextUsed + 1; setPlayNextUsed(next); try { localStorage.setItem('nextup_playnext_' + slug, String(next)) } catch {} }
       setSelectedSong(''); setCustomSong(''); setDedication('')
-      setSuccess(true); setTimeout(() => setSuccess(false), 6000)
+      setRequestOpen(false)
+      setSuccess(true); setTimeout(() => setSuccess(false), 5000)
     } catch (err) { setError(err.message) }
     finally { setSubmitting(false) }
   }
@@ -493,74 +495,159 @@ export default function ShowPage() {
           </div>
         ) : (
           <>
-            {!show.queueOpen ? (
-              <div className="card" style={{ marginBottom: '24px', textAlign: 'center', padding: '36px 24px', border: '1.5px dashed var(--border)' }}>
-                <div style={{ fontSize: '44px', marginBottom: '12px' }}>🚫</div>
-                <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '6px' }}>Queue is closed</p>
-                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>The performer isn't taking requests right now — check back soon!</p>
-              </div>
-            ) : hasEnough ? (
-              <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(0,255,136,0.15)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                  <div><h2 style={{ fontWeight: 800, fontSize: '18px' }}>Request a Song</h2>
-                    <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>
-                      <span style={{ color: 'var(--neon)', fontWeight: 700 }}>🎵 {cost}</span>{" · "}
-                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚡ {jumpCost}</span>{" · "}
-                      <span style={{ color: '#ef4444', fontWeight: 700 }}>🔥 {playNextCost}</span>
-                    </p>
-                  </div>
-                  <span style={{ background: 'var(--neon-dim)', color: 'var(--neon)', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(0,255,136,0.2)', whiteSpace: 'nowrap', flexShrink: 0 }}>🪙 {effectiveCoins} left</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <input placeholder="Your name (optional)" value={requester} onChange={e => setRequester(e.target.value)} />
-                  {availableGenres.length > 1 && (
-                    <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius-sm)', padding: '10px 12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Browse by Genre</label>
-                        <button onClick={() => setSortAZ(v => !v)} style={{ padding: '3px 10px', fontSize: '11px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, background: sortAZ ? 'rgba(139,92,246,0.12)' : 'transparent', border: '1px solid ' + (sortAZ ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: sortAZ ? '#a78bfa' : 'var(--muted)', transition: 'all 0.15s' }}>A–Z</button>
+            {/* ── Request bottom-sheet modal ── */}
+            {requestOpen && (
+              <div onClick={e => { if (e.target === e.currentTarget) { setRequestOpen(false); setError('') } }}
+                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)', zIndex: 900, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                <div style={{ background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '8px 0 0', width: '100%', maxWidth: '600px', maxHeight: '92vh', overflowY: 'auto', border: '1px solid var(--border)', borderBottom: 'none' }}>
+                  <div style={{ width: '40px', height: '4px', background: 'var(--border)', borderRadius: '2px', margin: '0 auto 20px' }} />
+                  <div style={{ padding: '0 20px 40px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                      <div>
+                        <h2 style={{ fontWeight: 800, fontSize: '18px' }}>Request a Song</h2>
+                        <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>
+                          <span style={{ color: 'var(--neon)', fontWeight: 700 }}>🎵 {cost}</span>{' · '}
+                          <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚡ {jumpCost}</span>{' · '}
+                          <span style={{ color: '#ef4444', fontWeight: 700 }}>🔥 {playNextCost}</span>
+                        </p>
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                        {availableGenres.map(g => (
-                          <button key={g} onClick={() => setGenreFilter(g)} style={{ padding: '5px 13px', fontSize: '12px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', background: genreFilter === g ? 'var(--neon-dim)' : 'var(--surface)', border: '1.5px solid ' + (genreFilter === g ? 'rgba(0,255,136,0.4)' : 'var(--border)'), color: genreFilter === g ? 'var(--neon)' : 'var(--text-secondary)', transition: 'all 0.15s', minHeight: '30px' }}>{g}</button>
-                        ))}
+                      <button onClick={() => { setRequestOpen(false); setError('') }} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '50%', width: '32px', height: '32px', color: 'var(--muted)', fontSize: '18px', cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>×</button>
+                    </div>
+
+                    {/* Selected song display or custom input */}
+                    {selectedSong ? (
+                      <div style={{ background: 'var(--neon-dim)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontWeight: 800, fontSize: '16px', color: 'var(--neon)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedSong}</p>
+                          {show.songs?.find(s => s.title === selectedSong)?.artist && (
+                            <p style={{ color: 'var(--muted)', fontSize: '13px', marginTop: '2px' }}>{show.songs.find(s => s.title === selectedSong).artist}</p>
+                          )}
+                        </div>
+                        <button onClick={() => setSelectedSong('')} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--muted)', fontSize: '11px', cursor: 'pointer', padding: '4px 10px', fontFamily: 'inherit', fontWeight: 700, flexShrink: 0 }}>change</button>
+                      </div>
+                    ) : (
+                      <input placeholder="Type a song title..." value={customSong} onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }} style={{ marginBottom: '10px' }} autoFocus />
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <input placeholder="Your name (optional)" value={requester} onChange={e => setRequester(e.target.value)} />
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Dedication (optional)</label>
+                        <div style={{ position: 'relative' }}>
+                          <input placeholder="e.g. 'Happy Birthday Sarah! 🎂'" value={dedication} onChange={e => setDedication(e.target.value.slice(0, 60))} style={{ paddingRight: '48px', borderColor: dedication ? 'rgba(167,139,250,0.4)' : undefined }} />
+                          {dedication.length > 0 && (<span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: dedication.length >= 55 ? '#ef4444' : 'var(--muted)', fontWeight: 600, pointerEvents: 'none' }}>{60 - dedication.length}</span>)}
+                        </div>
+                      </div>
+                      {error && <div className="error">{error}</div>}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" onClick={() => handleRequest('STANDARD')} disabled={submitting || !canStandard} style={tierButtonStyle('STANDARD', canStandard && !submitting)}>
+                          <div style={{ fontSize: '20px', marginBottom: '3px' }}>🎵</div>
+                          <div style={{ fontSize: '12px', fontWeight: 700 }}>Add to Queue</div>
+                          <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>🪙 {cost}</div>
+                        </button>
+                        <button type="button" onClick={() => handleRequest('PRIORITY')} disabled={submitting || !canPriority} style={tierButtonStyle('PRIORITY', canPriority && !submitting)}>
+                          <div style={{ fontSize: '20px', marginBottom: '3px' }}>⚡</div>
+                          <div style={{ fontSize: '12px', fontWeight: 700 }}>Move Up</div>
+                          <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>{jumpsUsed >= maxJumps ? 'Limit reached' : '🪙 ' + jumpCost + ' (' + (maxJumps - jumpsUsed) + ' left)'}</div>
+                        </button>
+                        <button type="button" onClick={() => handleRequest('PLAY_NEXT')} disabled={submitting || !canPlayNext} style={tierButtonStyle('PLAY_NEXT', canPlayNext && !submitting)}>
+                          <div style={{ fontSize: '20px', marginBottom: '3px' }}>🔥</div>
+                          <div style={{ fontSize: '12px', fontWeight: 700 }}>Play Next</div>
+                          <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>{playNextUsed >= maxPlayNext ? 'Limit reached' : '🪙 ' + playNextCost}</div>
+                        </button>
+                      </div>
+                      {!hasEnough && (
+                        <button onClick={() => { setRequestOpen(false); openBuyMode() }} className="btn-primary" style={{ padding: '13px', fontSize: '15px' }}>🪙 Get Coins to Request</button>
+                      )}
+                      {submitting && (<div style={{ textAlign: 'center', padding: '8px' }}><Spinner /></div>)}
+
+                      {/* Shoutout add-on */}
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px', marginTop: '2px' }}>
+                        <p style={{ fontSize: '12px', fontWeight: 700, color: '#a78bfa', marginBottom: '8px' }}>
+                          📣 Add a Shoutout <span style={{ color: 'var(--muted)', fontWeight: 500 }}>(optional · 🪙 {shoutoutCost} coins)</span>
+                        </p>
+                        <textarea placeholder="Send the performer a message with your request..." value={shoutoutMsg} onChange={e => setShoutoutMsg(e.target.value.slice(0, 120))} rows={2} style={{ resize: 'none', minHeight: '60px' }} />
+                        {shoutoutMsg.trim() && (
+                          <button type="button" onClick={handleShoutout} disabled={sendingShoutout || !canShoutout} style={{ marginTop: '8px', padding: '11px', fontSize: '13px', borderRadius: '10px', width: '100%', background: canShoutout ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1.5px solid ' + (canShoutout ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: canShoutout ? '#a78bfa' : 'var(--muted)', fontWeight: 700, cursor: canShoutout ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
+                            {sendingShoutout ? '⏳ Sending...' : canShoutout ? '📣 Send Shoutout · 🪙 ' + shoutoutCost : 'Need ' + shoutoutCost + ' coins'}
+                          </button>
+                        )}
+                      </div>
+                      <div style={{ textAlign: 'center' }}>
+                        <button onClick={() => openBuyMode()} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins · 🪙 {effectiveCoins} left</button>
                       </div>
                     </div>
-                  )}
-                  {filteredSongs.length > 0 && (<select value={selectedSong} onChange={e => { setSelectedSong(e.target.value); setCustomSong('') }}><option value="">Pick from setlist...</option>{filteredSongs.map(s => (<option key={s.id} value={s.title}>{s.title}{s.artist ? ' - ' + s.artist : ''}</option>))}</select>)}
-                  <input placeholder={show.songs?.length > 0 ? 'Or type any song...' : 'Song title...'} value={customSong} onChange={e => { setCustomSong(e.target.value); setSelectedSong('') }} />
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '6px' }}>Song Dedication (optional)</label>
-                    <div style={{ position: 'relative' }}><input placeholder="e.g. 'Happy Birthday Sarah! 🎂'" value={dedication} onChange={e => setDedication(e.target.value.slice(0, 60))} style={{ paddingRight: '48px', borderColor: dedication ? 'rgba(167,139,250,0.4)' : undefined }} />{dedication.length > 0 && (<span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', color: dedication.length >= 55 ? '#ef4444' : 'var(--muted)', fontWeight: 600, pointerEvents: 'none' }}>{60 - dedication.length}</span>)}</div>
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button type="button" onClick={() => handleRequest('STANDARD')} disabled={submitting || !canStandard} style={tierButtonStyle('STANDARD', canStandard && !submitting)}><div style={{ fontSize: '18px', marginBottom: '2px' }}>🎵</div><div style={{ fontSize: '12px' }}>Add to Queue</div><div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>🪙 {cost}</div></button>
-                    <button type="button" onClick={() => handleRequest('PRIORITY')} disabled={submitting || !canPriority} style={tierButtonStyle('PRIORITY', canPriority && !submitting)}><div style={{ fontSize: '18px', marginBottom: '2px' }}>⚡</div><div style={{ fontSize: '12px' }}>Move Up</div><div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>{jumpsUsed >= maxJumps ? 'Limit reached' : '🪙 ' + jumpCost + ' (' + (maxJumps - jumpsUsed) + ' left)'}</div></button>
-                    <button type="button" onClick={() => handleRequest('PLAY_NEXT')} disabled={submitting || !canPlayNext} style={tierButtonStyle('PLAY_NEXT', canPlayNext && !submitting)}><div style={{ fontSize: '18px', marginBottom: '2px' }}>🔥</div><div style={{ fontSize: '12px' }}>Play Next</div><div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>{playNextUsed >= maxPlayNext ? 'Limit reached' : '🪙 ' + playNextCost}</div></button>
-                  </div>
-                  {submitting && (<div style={{ textAlign: 'center', padding: '8px' }}><Spinner /></div>)}
                 </div>
-                <div style={{ borderTop: '1px solid var(--border)', marginTop: '18px', paddingTop: '16px' }}>
-                  <p style={{ fontSize: '12px', fontWeight: 700, color: '#a78bfa', marginBottom: '10px' }}>
-                    📣 Add a Shoutout <span style={{ color: 'var(--muted)', fontWeight: 500 }}>(optional · 🪙 {shoutoutCost} coins)</span>
-                  </p>
-                  <textarea placeholder="Send the performer a message alongside your request..." value={shoutoutMsg} onChange={e => setShoutoutMsg(e.target.value.slice(0, 120))} rows={2} style={{ resize: 'vertical', minHeight: '60px' }} />
-                  {shoutoutMsg.trim() && (
-                    <button type="button" onClick={handleShoutout} disabled={sendingShoutout || !canShoutout} style={{ marginTop: '8px', padding: '11px', fontSize: '13px', borderRadius: '10px', width: '100%', background: canShoutout ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1.5px solid ' + (canShoutout ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: canShoutout ? '#a78bfa' : 'var(--muted)', fontWeight: 700, cursor: canShoutout ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
-                      {sendingShoutout ? '⏳ Sending...' : canShoutout ? '📣 Send Shoutout · 🪙 ' + shoutoutCost : 'Need ' + shoutoutCost + ' coins for a shoutout'}
+              </div>
+            )}
+
+            {/* ── Setlist card ── */}
+            <div className="card" style={{ marginBottom: '24px', borderColor: show.queueOpen ? 'rgba(0,255,136,0.15)' : 'var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                <div>
+                  <h2 style={{ fontWeight: 800, fontSize: '18px' }}>🎵 Tonight's Setlist</h2>
+                  <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>{show.queueOpen ? 'Tap a song to request it' : 'Queue is closed — check back soon'}</p>
+                </div>
+                <span style={{ background: show.queueOpen ? 'var(--neon-dim)' : 'rgba(255,91,91,0.08)', color: show.queueOpen ? 'var(--neon)' : 'var(--red)', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid ' + (show.queueOpen ? 'rgba(0,255,136,0.2)' : 'rgba(255,91,91,0.2)'), whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {show.queueOpen ? '🪙 ' + effectiveCoins + ' coins' : '🚫 Closed'}
+                </span>
+              </div>
+
+              {/* Genre + sort filter */}
+              {availableGenres.length > 1 && (
+                <div style={{ background: 'var(--surface2)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Filter by Genre</label>
+                    <button onClick={() => setSortAZ(v => !v)} style={{ padding: '3px 10px', fontSize: '11px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', background: sortAZ ? 'rgba(139,92,246,0.12)' : 'transparent', border: '1px solid ' + (sortAZ ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: sortAZ ? '#a78bfa' : 'var(--muted)', transition: 'all 0.15s' }}>A–Z</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {availableGenres.map(g => (
+                      <button key={g} onClick={() => setGenreFilter(g)} style={{ padding: '5px 13px', fontSize: '12px', fontWeight: 700, borderRadius: '20px', cursor: 'pointer', fontFamily: 'inherit', background: genreFilter === g ? 'var(--neon-dim)' : 'var(--surface)', border: '1.5px solid ' + (genreFilter === g ? 'rgba(0,255,136,0.4)' : 'var(--border)'), color: genreFilter === g ? 'var(--neon)' : 'var(--text-secondary)', transition: 'all 0.15s', minHeight: '30px' }}>{g}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Song list */}
+              {filteredSongs.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: show.queueOpen ? '12px' : 0 }}>
+                  {filteredSongs.map(song => (
+                    <button key={song.id}
+                      onClick={() => { if (!show.queueOpen) return; setSelectedSong(song.title); setCustomSong(''); setError(''); setRequestOpen(true) }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', cursor: show.queueOpen ? 'pointer' : 'default', transition: 'all 0.15s', textAlign: 'left', fontFamily: 'inherit', width: '100%', opacity: show.queueOpen ? 1 : 0.5 }}
+                      onMouseEnter={e => { if (show.queueOpen) { e.currentTarget.style.borderColor = 'rgba(0,255,136,0.4)'; e.currentTarget.style.background = 'rgba(0,255,136,0.04)' } }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--surface2)' }}>
+                      <div style={{ width: '36px', height: '36px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>🎵</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</p>
+                        {song.artist && <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.artist}</p>}
+                      </div>
+                      {song.genre && song.genre !== 'Other' && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '2px 8px', flexShrink: 0 }}>{song.genre}</span>
+                      )}
+                      {show.queueOpen && <span style={{ color: 'var(--neon)', fontSize: '20px', flexShrink: 0, lineHeight: 1 }}>›</span>}
                     </button>
-                  )}
+                  ))}
                 </div>
-                <div style={{ textAlign: 'center', marginTop: '12px' }}><button onClick={() => { openBuyMode() }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>
-              </div>
-            ) : (
-              <div className="card" style={{ marginBottom: '24px', textAlign: 'center', padding: '36px 24px', border: '1.5px dashed var(--border)' }}>
-                <div style={{ fontSize: '44px', marginBottom: '12px' }}>🪙</div>
-                <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '6px' }}>{effectiveCoins === 0 ? 'No coins yet' : 'Need ' + (cost - effectiveCoins) + ' more coin' + (cost - effectiveCoins !== 1 ? 's' : '')}</p>
-                <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '22px' }}>{cost === 1 ? 'Get coins to request songs · $1 each' : cost + ' coins needed per request · $1 each'}</p>
-                <button onClick={() => { openBuyMode() }} className="btn-primary" style={{ padding: '13px 32px', fontSize: '15px' }}>🪙 Get Coins</button>
-              </div>
-            ) /* end !queueOpen / hasEnough */}
-            {(!show.queueOpen || !hasEnough) && <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(139,92,246,0.15)' }}>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '28px 24px', color: 'var(--muted)', fontSize: '14px', marginBottom: show.queueOpen ? '12px' : 0 }}>
+                  {show.songs?.length > 0 ? 'No songs in this genre' : 'No setlist uploaded yet'}
+                </div>
+              )}
+
+              {show.queueOpen && (
+                <button onClick={() => { setSelectedSong(''); setCustomSong(''); setError(''); setRequestOpen(true) }}
+                  style={{ width: '100%', padding: '11px', fontSize: '13px', fontWeight: 700, borderRadius: 'var(--radius-md)', background: 'transparent', border: '1.5px dashed var(--border)', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(0,255,136,0.35)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--muted)' }}>
+                  🎤 Request a song not on this list
+                </button>
+              )}
+            </div>
+
+            {/* ── Shoutout card ── */}
+            <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(139,92,246,0.15)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
                 <div><h2 style={{ fontWeight: 800, fontSize: '17px' }}>📣 Send a Shoutout</h2><p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>Send a message to the performer · <span style={{ color: '#a78bfa', fontWeight: 700 }}>🪙 {shoutoutCost} coins</span></p></div>
                 {canShoutout && (<span style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa', fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '20px', border: '1px solid rgba(139,92,246,0.25)', whiteSpace: 'nowrap', flexShrink: 0 }}>🪙 {effectiveCoins} left</span>)}
@@ -571,10 +658,11 @@ export default function ShowPage() {
                 <button type="button" onClick={handleShoutout} disabled={sendingShoutout || !shoutoutMsg.trim() || !canShoutout} style={{ padding: '12px', fontSize: '14px', borderRadius: '10px', background: (canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1.5px solid ' + ((canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: (canShoutout && shoutoutMsg.trim()) ? '#a78bfa' : 'var(--muted)', fontWeight: 700, cursor: (canShoutout && shoutoutMsg.trim()) ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
                   {sendingShoutout ? '⏳ Sending...' : !canShoutout ? ('Need ' + shoutoutCost + ' coins · 🪙 ' + (shoutoutCost - effectiveCoins) + ' more') : ('📣 Send Shoutout · 🪙 ' + shoutoutCost + ' coins')}
                 </button>
-                {!canShoutout && effectiveCoins < shoutoutCost && (<div style={{ textAlign: 'center' }}><button onClick={() => { openBuyMode() }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
+                {!canShoutout && (<div style={{ textAlign: 'center' }}><button onClick={() => openBuyMode()} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
               </div>
-            </div>}
+            </div>
 
+            {/* ── Tip card ── */}
             {(() => {
               const tipCost = show?.tipCost || 1
               const canTip = effectiveCoins >= tipCost
@@ -593,7 +681,7 @@ export default function ShowPage() {
                     <button type="button" onClick={handleTip} disabled={sendingTip || !tipValid} style={{ padding: '12px', fontSize: '14px', borderRadius: '10px', background: tipValid ? 'rgba(234,179,8,0.12)' : 'var(--surface2)', border: '1.5px solid ' + (tipValid ? 'rgba(234,179,8,0.4)' : 'var(--border)'), color: tipValid ? '#eab308' : 'var(--muted)', fontWeight: 700, cursor: tipValid ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
                       {sendingTip ? '⏳ Sending...' : !canTip ? ('Need ' + tipCost + ' coins · 🪙 ' + (tipCost - effectiveCoins) + ' more') : tipAmountNum > 0 ? ('💰 Send Tip · 🪙 ' + tipAmountNum + ' coins') : '💰 Send Tip'}
                     </button>
-                    {!canTip && (<div style={{ textAlign: 'center' }}><button onClick={() => { openBuyMode() }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
+                    {!canTip && (<div style={{ textAlign: 'center' }}><button onClick={() => openBuyMode()} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
                   </div>
                 </div>
               )

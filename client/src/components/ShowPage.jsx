@@ -28,6 +28,7 @@ export default function ShowPage() {
   const { slug } = useParams()
   const [params, setParams] = useSearchParams()
   const [show, setShow] = useState(null)
+  const [showNotFound, setShowNotFound] = useState(false)
   const [coins, setCoins] = useState(getStoredCoins)
   const [fanToken, setFanToken] = useState(getStoredFanToken)
   const [fanEmail, setFanEmail] = useState('')
@@ -105,7 +106,11 @@ export default function ShowPage() {
   }
 
   const fetchShow = async () => {
-    try { const res = await fetch('/api/show/' + slug); if (res.ok) setShow(await res.json()) } catch {}
+    try {
+      const res = await fetch('/api/show/' + slug)
+      if (res.ok) setShow(await res.json())
+      else if (res.status === 404) setShowNotFound(true)
+    } catch {}
   }
   const fetchVotes = async () => {
     try { const res = await fetch('/api/votes/' + slug); if (res.ok) { const d = await res.json(); setVoteResults(d.votes || []) } } catch {}
@@ -154,9 +159,15 @@ export default function ShowPage() {
   }
 
   useEffect(() => {
+    document.body.style.overflow = requestOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [requestOpen])
+
+  useEffect(() => {
     if (!slug) return
     const wsBase = window.location.origin.replace(/^http/, 'ws')
     wsRef.current = new WebSocket(wsBase + '/ws/' + slug)
+    wsRef.current.onerror = () => {}
     wsRef.current.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data)
@@ -304,6 +315,15 @@ export default function ShowPage() {
     } catch (err) { setError(err.message) }
     finally { setSendingTip(false) }
   }
+
+  if (showNotFound) return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: 'var(--bg)', textAlign: 'center', padding: '24px' }}>
+      <div style={{ fontSize: '52px', marginBottom: '4px' }}>🎵</div>
+      <h1 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text)' }}>Show not found</h1>
+      <p style={{ color: 'var(--muted)', fontSize: '14px', maxWidth: '280px' }}>This performer link doesn't exist or may have changed. Try scanning the QR code again.</p>
+      <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+    </div>
+  )
 
   if (!show) return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', background: 'var(--bg)' }}>
@@ -497,7 +517,7 @@ export default function ShowPage() {
           <>
             {/* ── Request bottom-sheet modal ── */}
             {requestOpen && (
-              <div onClick={e => { if (e.target === e.currentTarget) { setRequestOpen(false); setError('') } }}
+              <div onClick={e => { if (e.target === e.currentTarget) { setRequestOpen(false); setError(''); setShoutoutMsg('') } }}
                 style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)', zIndex: 900, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
                 <div style={{ background: 'var(--surface)', borderRadius: '20px 20px 0 0', padding: '8px 0 0', width: '100%', maxWidth: '600px', maxHeight: '92vh', overflowY: 'auto', border: '1px solid var(--border)', borderBottom: 'none' }}>
                   <div style={{ width: '40px', height: '4px', background: 'var(--border)', borderRadius: '2px', margin: '0 auto 20px' }} />
@@ -511,7 +531,7 @@ export default function ShowPage() {
                           <span style={{ color: '#ef4444', fontWeight: 700 }}>🔥 {playNextCost}</span>
                         </p>
                       </div>
-                      <button onClick={() => { setRequestOpen(false); setError('') }} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '50%', width: '32px', height: '32px', color: 'var(--muted)', fontSize: '18px', cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>×</button>
+                      <button onClick={() => { setRequestOpen(false); setError(''); setShoutoutMsg('') }} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '50%', width: '32px', height: '32px', color: 'var(--muted)', fontSize: '18px', cursor: 'pointer', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>×</button>
                     </div>
 
                     {/* Selected song display or custom input */}
@@ -566,11 +586,17 @@ export default function ShowPage() {
                         <p style={{ fontSize: '12px', fontWeight: 700, color: '#a78bfa', marginBottom: '8px' }}>
                           📣 Add a Shoutout <span style={{ color: 'var(--muted)', fontWeight: 500 }}>(optional · 🪙 {shoutoutCost} coins)</span>
                         </p>
-                        <textarea placeholder="Send the performer a message with your request..." value={shoutoutMsg} onChange={e => setShoutoutMsg(e.target.value.slice(0, 120))} rows={2} style={{ resize: 'none', minHeight: '60px' }} />
-                        {shoutoutMsg.trim() && (
-                          <button type="button" onClick={handleShoutout} disabled={sendingShoutout || !canShoutout} style={{ marginTop: '8px', padding: '11px', fontSize: '13px', borderRadius: '10px', width: '100%', background: canShoutout ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1.5px solid ' + (canShoutout ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: canShoutout ? '#a78bfa' : 'var(--muted)', fontWeight: 700, cursor: canShoutout ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
-                            {sendingShoutout ? '⏳ Sending...' : canShoutout ? '📣 Send Shoutout · 🪙 ' + shoutoutCost : 'Need ' + shoutoutCost + ' coins'}
-                          </button>
+                        {shoutoutSuccess ? (
+                          <div style={{ background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#a78bfa', fontWeight: 700, textAlign: 'center' }}>📣 Shoutout sent!</div>
+                        ) : (
+                          <>
+                            <textarea placeholder="Send the performer a message with your request..." value={shoutoutMsg} onChange={e => setShoutoutMsg(e.target.value.slice(0, 120))} rows={2} style={{ resize: 'none', minHeight: '60px' }} />
+                            {shoutoutMsg.trim() && (
+                              <button type="button" onClick={handleShoutout} disabled={sendingShoutout || !canShoutout} style={{ marginTop: '8px', padding: '11px', fontSize: '13px', borderRadius: '10px', width: '100%', background: canShoutout ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1.5px solid ' + (canShoutout ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: canShoutout ? '#a78bfa' : 'var(--muted)', fontWeight: 700, cursor: canShoutout ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
+                                {sendingShoutout ? '⏳ Sending...' : canShoutout ? '📣 Send Shoutout · 🪙 ' + shoutoutCost : 'Need ' + shoutoutCost + ' coins'}
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                       <div style={{ textAlign: 'center' }}>

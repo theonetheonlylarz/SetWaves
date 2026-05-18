@@ -24,6 +24,8 @@ model User {
   maxPlayNextPerSession Int          @default(1)
   shoutoutCost          Int          @default(10)
   tipCost               Int          @default(5)
+  queueOpen             Boolean      @default(true)
+  nowPlaying            String?
   createdAt             DateTime     @default(now())
   songs                 Song[]
   queue                 QueueItem[]

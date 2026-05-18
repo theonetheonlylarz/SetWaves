@@ -5,7 +5,6 @@ const Spinner = () => (
   <div style={{ width: '32px', height: '32px', border: '3px solid var(--border)', borderTopColor: 'var(--neon)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
 )
 
-const COIN_PRESETS = [5, 10, 25, 50]
 const COINS_KEY = 'nextup_coins'
 const FAN_TOKEN_KEY = 'nextup_fan_token'
 
@@ -68,6 +67,7 @@ export default function ShowPage() {
   const [tipName, setTipName] = useState('')
   const [sendingTip, setSendingTip] = useState(false)
   const [tipSuccess, setTipSuccess] = useState(false)
+  const [packages, setPackages] = useState([])
   const wsRef = useRef(null)
 
   useEffect(() => { storeCoins(coins) }, [coins])
@@ -149,6 +149,7 @@ export default function ShowPage() {
       try {
         const msg = JSON.parse(evt.data)
         if (msg.type === 'QUEUE_UPDATE' || !msg.type) { fetchShow(); refreshFanBalance() }
+        if (msg.type === 'SHOW_STATUS' || msg.type === 'NOW_PLAYING') fetchShow()
       } catch { fetchShow() }
     }
     return () => wsRef.current?.close()
@@ -180,6 +181,13 @@ export default function ShowPage() {
 
   const handleFanLogout = () => {
     localStorage.removeItem(FAN_TOKEN_KEY); setFanToken(null); setFanEmail(''); setFanBalance(null)
+  }
+
+  const openBuyMode = () => {
+    setBuyMode(true); setError('')
+    if (packages.length === 0 && slug) {
+      fetch('/api/packages/' + slug).then(r => r.ok ? r.json() : []).then(setPackages).catch(() => {})
+    }
   }
 
   const buyCoins = async (amount) => {
@@ -361,6 +369,18 @@ export default function ShowPage() {
               {' '}to save coins across devices
             </p>
         }
+        {show.nowPlaying && (
+          <div style={{ marginTop: '16px', display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '24px', padding: '7px 16px' }}>
+            <span style={{ width: '8px', height: '8px', background: 'var(--neon)', borderRadius: '50%', display: 'inline-block', flexShrink: 0, animation: 'pulse 1.5s ease-in-out infinite' }} />
+            <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Now Playing</span>
+            <span style={{ fontSize: '14px', color: 'var(--text)', fontWeight: 700 }}>{show.nowPlaying}</span>
+          </div>
+        )}
+        {!show.queueOpen && (
+          <div style={{ marginTop: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(255,91,91,0.06)', border: '1px solid rgba(255,91,91,0.2)', borderRadius: '24px', padding: '6px 14px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--red)', fontWeight: 700 }}>🚫 Queue is closed</span>
+          </div>
+        )}
       </div>
       <div style={{ maxWidth: '540px', margin: '0 auto', padding: '28px 20px 60px' }}>
         {redeeming && (<div style={{ background: 'rgba(0,255,136,0.04)', border: '1.5px solid rgba(0,255,136,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '14px', textAlign: 'center' }}><p style={{ color: 'var(--neon)', fontWeight: 600, fontSize: '14px' }}>⏳ Confirming your payment...</p></div>)}
@@ -376,13 +396,21 @@ export default function ShowPage() {
               <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
-              {COIN_PRESETS.map(n => (
-                <button key={n} onClick={() => buyCoins(n)} disabled={buying}
+              {(packages.length > 0 ? packages : [
+                { id: 'starter', name: 'Starter', coins: 5, price: 5, emoji: '🎵', description: 'Good for 1–2 requests' },
+                { id: 'popular', name: 'Popular', coins: 15, price: 15, emoji: '⚡', description: 'Jump the queue 3x' },
+                { id: 'superfan', name: 'Super Fan', coins: 50, price: 50, emoji: '🔥', description: 'Full night of requests' },
+                { id: 'vip', name: 'VIP', coins: 100, price: 100, emoji: '👑', description: 'Play Next + shoutouts' },
+              ]).map(pkg => (
+                <button key={pkg.id} onClick={() => buyCoins(pkg.coins)} disabled={buying}
                   style={{ background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '16px 12px', cursor: 'pointer', color: 'var(--text)', textAlign: 'center', transition: 'all 0.15s', fontFamily: 'inherit' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(0,255,136,0.4)'; e.currentTarget.style.background='rgba(0,255,136,0.04)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)'; }}>
-                  <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--neon)' }}>🪙 {n}</div>
-                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>${'$'}{n}.00</div>
+                  <div style={{ fontSize: '18px', marginBottom: '4px' }}>{pkg.emoji}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', marginBottom: '2px' }}>{pkg.name}</div>
+                  <div style={{ fontSize: '18px', fontWeight: 900, color: 'var(--neon)', marginBottom: '3px' }}>🪙 {pkg.coins}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{pkg.description}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', fontWeight: 700 }}>${pkg.price}.00</div>
                 </button>
               ))}
             </div>
@@ -398,7 +426,13 @@ export default function ShowPage() {
           </div>
         ) : (
           <>
-            {hasEnough ? (
+            {!show.queueOpen ? (
+              <div className="card" style={{ marginBottom: '24px', textAlign: 'center', padding: '36px 24px', border: '1.5px dashed var(--border)' }}>
+                <div style={{ fontSize: '44px', marginBottom: '12px' }}>🚫</div>
+                <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '6px' }}>Queue is closed</p>
+                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>The performer isn't taking requests right now — check back soon!</p>
+              </div>
+            ) : hasEnough ? (
               <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(0,255,136,0.15)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                   <div><h2 style={{ fontWeight: 800, fontSize: '18px' }}>Request a Song</h2>
@@ -426,16 +460,16 @@ export default function ShowPage() {
                   </div>
                   {submitting && (<div style={{ textAlign: 'center', padding: '8px' }}><Spinner /></div>)}
                 </div>
-                <div style={{ textAlign: 'center', marginTop: '12px' }}><button onClick={() => { setBuyMode(true); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>
+                <div style={{ textAlign: 'center', marginTop: '12px' }}><button onClick={() => { openBuyMode() }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>
               </div>
             ) : (
               <div className="card" style={{ marginBottom: '24px', textAlign: 'center', padding: '36px 24px', border: '1.5px dashed var(--border)' }}>
                 <div style={{ fontSize: '44px', marginBottom: '12px' }}>🪙</div>
                 <p style={{ fontWeight: 700, fontSize: '18px', marginBottom: '6px' }}>{effectiveCoins === 0 ? 'No coins yet' : 'Need ' + (cost - effectiveCoins) + ' more coin' + (cost - effectiveCoins !== 1 ? 's' : '')}</p>
                 <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '22px' }}>{cost === 1 ? 'Get coins to request songs · $1 each' : cost + ' coins needed per request · $1 each'}</p>
-                <button onClick={() => { setBuyMode(true); setError('') }} className="btn-primary" style={{ padding: '13px 32px', fontSize: '15px' }}>🪙 Get Coins</button>
+                <button onClick={() => { openBuyMode() }} className="btn-primary" style={{ padding: '13px 32px', fontSize: '15px' }}>🪙 Get Coins</button>
               </div>
-            )}
+            ) /* end !queueOpen / hasEnough */}
             <div className="card" style={{ marginBottom: '24px', borderColor: 'rgba(139,92,246,0.15)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
                 <div><h2 style={{ fontWeight: 800, fontSize: '17px' }}>📣 Send a Shoutout</h2><p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>Send a message to the performer · <span style={{ color: '#a78bfa', fontWeight: 700 }}>🪙 {shoutoutCost} coins</span></p></div>
@@ -447,7 +481,7 @@ export default function ShowPage() {
                 <button type="button" onClick={handleShoutout} disabled={sendingShoutout || !shoutoutMsg.trim() || !canShoutout} style={{ padding: '12px', fontSize: '14px', borderRadius: '10px', background: (canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.12)' : 'var(--surface2)', border: '1.5px solid ' + ((canShoutout && shoutoutMsg.trim()) ? 'rgba(139,92,246,0.4)' : 'var(--border)'), color: (canShoutout && shoutoutMsg.trim()) ? '#a78bfa' : 'var(--muted)', fontWeight: 700, cursor: (canShoutout && shoutoutMsg.trim()) ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
                   {sendingShoutout ? '⏳ Sending...' : !canShoutout ? ('Need ' + shoutoutCost + ' coins · 🪙 ' + (shoutoutCost - effectiveCoins) + ' more') : ('📣 Send Shoutout · 🪙 ' + shoutoutCost + ' coins')}
                 </button>
-                {!canShoutout && effectiveCoins < shoutoutCost && (<div style={{ textAlign: 'center' }}><button onClick={() => { setBuyMode(true); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
+                {!canShoutout && effectiveCoins < shoutoutCost && (<div style={{ textAlign: 'center' }}><button onClick={() => { openBuyMode() }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
               </div>
             </div>
 
@@ -469,7 +503,7 @@ export default function ShowPage() {
                     <button type="button" onClick={handleTip} disabled={sendingTip || !tipValid} style={{ padding: '12px', fontSize: '14px', borderRadius: '10px', background: tipValid ? 'rgba(234,179,8,0.12)' : 'var(--surface2)', border: '1.5px solid ' + (tipValid ? 'rgba(234,179,8,0.4)' : 'var(--border)'), color: tipValid ? '#eab308' : 'var(--muted)', fontWeight: 700, cursor: tipValid ? 'pointer' : 'not-allowed', transition: 'all 0.15s', fontFamily: 'inherit' }}>
                       {sendingTip ? '⏳ Sending...' : !canTip ? ('Need ' + tipCost + ' coins · 🪙 ' + (tipCost - effectiveCoins) + ' more') : tipAmountNum > 0 ? ('💰 Send Tip · 🪙 ' + tipAmountNum + ' coins') : '💰 Send Tip'}
                     </button>
-                    {!canTip && (<div style={{ textAlign: 'center' }}><button onClick={() => { setBuyMode(true); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
+                    {!canTip && (<div style={{ textAlign: 'center' }}><button onClick={() => { openBuyMode() }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '12px', cursor: 'pointer', padding: 0 }}>+ Get more coins</button></div>)}
                   </div>
                 </div>
               )
@@ -513,7 +547,7 @@ export default function ShowPage() {
           )}
         </div>
       </div>
-      <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }'}</style>
+      <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }'}</style>
     </div>
   )
 }

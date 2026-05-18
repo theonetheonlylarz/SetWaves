@@ -37,6 +37,11 @@ export default function Dashboard() {
   const [tipCostSetting, setTipCostSetting] = useState(5)
   const [savingPricing, setSavingPricing] = useState(false)
   const [pricingSaved, setPricingSaved] = useState(false)
+  const [queueOpen, setQueueOpen] = useState(true)
+  const [togglingQueue, setTogglingQueue] = useState(false)
+  const [nowPlayingInput, setNowPlayingInput] = useState('')
+  const [nowPlayingText, setNowPlayingText] = useState('')
+  const [savingNowPlaying, setSavingNowPlaying] = useState(false)
   const navigate = useNavigate()
   const wsRef = useRef(null)
   const token = localStorage.getItem('token')
@@ -64,6 +69,9 @@ export default function Dashboard() {
       setMaxPlayNext(profileData.maxPlayNextPerSession ?? 1)
       setShoutoutCost(profileData.shoutoutCost ?? 10)
       setTipCostSetting(profileData.tipCost ?? 5)
+      setQueueOpen(profileData.queueOpen ?? true)
+      setNowPlayingText(profileData.nowPlaying || '')
+      setNowPlayingInput(profileData.nowPlaying || '')
       setQueue(Array.isArray(queueData) ? queueData : [])
       setSongs(Array.isArray(songsData) ? songsData : [])
       setPendingQueue(Array.isArray(pendingData) ? pendingData : [])
@@ -110,6 +118,8 @@ export default function Dashboard() {
         if (msg.type === 'SHOUTOUT_NEW') { fetchShoutouts(); fetchStats() }
         if (msg.type === 'SHOUTOUT_READ') fetchShoutouts()
         if (msg.type === 'TIP_NEW') { fetchTips(); fetchStats() }
+        if (msg.type === 'SHOW_STATUS') setQueueOpen(msg.queueOpen)
+        if (msg.type === 'NOW_PLAYING') { setNowPlayingText(msg.nowPlaying || ''); setNowPlayingInput(msg.nowPlaying || '') }
       } catch { fetchAll() }
     }
     return () => wsRef.current?.close()
@@ -190,6 +200,22 @@ export default function Dashboard() {
     fetchAll()
   }
 
+  const toggleQueue = async () => {
+    setTogglingQueue(true)
+    const next = !queueOpen
+    setQueueOpen(next)
+    await fetch('/api/show/status', { method: 'PUT', headers, body: JSON.stringify({ queueOpen: next }) })
+    setTogglingQueue(false)
+  }
+
+  const saveNowPlaying = async (val) => {
+    const text = val !== undefined ? val : nowPlayingInput
+    setSavingNowPlaying(true)
+    await fetch('/api/now-playing', { method: 'PUT', headers, body: JSON.stringify({ nowPlaying: text }) })
+    setNowPlayingText(text)
+    setSavingNowPlaying(false)
+  }
+
   const acceptQueueItem = async (id) => {
     await fetch('/api/queue/' + id + '/accept', { method: 'PUT', headers })
     fetchAll(); fetchStats()
@@ -265,6 +291,34 @@ export default function Dashboard() {
 
       <main style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 20px' }}>
         {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+
+        <div className="card" style={{ marginBottom: '16px', padding: '12px 16px' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button onClick={toggleQueue} disabled={togglingQueue}
+              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                background: queueOpen ? 'rgba(0,255,136,0.08)' : 'rgba(255,91,91,0.08)',
+                borderColor: queueOpen ? 'rgba(0,255,136,0.35)' : 'rgba(255,91,91,0.35)',
+                color: queueOpen ? 'var(--neon)' : 'var(--red)' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: queueOpen ? 'var(--neon)' : 'var(--red)', display: 'inline-block', flexShrink: 0 }} />
+              {queueOpen ? 'Queue Open' : 'Queue Closed'}
+            </button>
+            <div style={{ flex: 1, display: 'flex', gap: '6px', minWidth: '200px' }}>
+              <input
+                placeholder="Now playing..."
+                value={nowPlayingInput}
+                onChange={e => setNowPlayingInput(e.target.value.slice(0, 80))}
+                onKeyDown={e => e.key === 'Enter' && saveNowPlaying()}
+                style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }}
+              />
+              <button onClick={() => saveNowPlaying()} disabled={savingNowPlaying} className="btn-secondary" style={{ padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                {savingNowPlaying ? '...' : 'Set'}
+              </button>
+              {nowPlayingText && (
+                <button onClick={() => { setNowPlayingInput(''); saveNowPlaying('') }} className="btn-secondary" style={{ padding: '8px 10px', fontSize: '12px' }}>✕</button>
+              )}
+            </div>
+          </div>
+        </div>
 
         <div style={{ display: 'flex', gap: '2px', marginBottom: '24px', background: 'var(--surface)', padding: '3px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flexWrap: 'wrap' }}>
           {TABS.map(t => (

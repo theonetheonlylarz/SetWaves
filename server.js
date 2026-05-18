@@ -181,7 +181,8 @@ app.get('/api/profile', auth, async (req, res) => {
     stripeOnboarded: user.stripeOnboarded, queueCoinCost: user.queueCoinCost,
     queueJumpCost: user.queueJumpCost, maxJumpsPerSession: user.maxJumpsPerSession,
     playNextCost: user.playNextCost, maxPlayNextPerSession: user.maxPlayNextPerSession,
-    shoutoutCost: user.shoutoutCost, tipCost: user.tipCost });
+    shoutoutCost: user.shoutoutCost, tipCost: user.tipCost,
+    queueOpen: user.queueOpen, nowPlaying: user.nowPlaying });
 });
 
 app.put('/api/profile', auth, async (req, res) => {
@@ -212,6 +213,24 @@ app.put('/api/pricing', auth, async (req, res) => {
     maxPlayNextPerSession: user.maxPlayNextPerSession, shoutoutCost: user.shoutoutCost,
     tipCost: user.tipCost });
 });
+
+app.put('/api/show/status', auth, async (req, res) => {
+  const { queueOpen } = req.body;
+  if (typeof queueOpen !== 'boolean') return res.status(400).json({ error: 'queueOpen must be boolean' });
+  const user = await prisma.user.update({ where: { id: req.userId }, data: { queueOpen } });
+  broadcast(req.userId, { type: 'SHOW_STATUS', queueOpen });
+  broadcast(user.slug, { type: 'SHOW_STATUS', queueOpen });
+  res.json({ queueOpen: user.queueOpen });
+});
+
+app.put('/api/now-playing', auth, async (req, res) => {
+  const nowPlaying = (req.body.nowPlaying || '').trim().slice(0, 80) || null;
+  const user = await prisma.user.update({ where: { id: req.userId }, data: { nowPlaying } });
+  broadcast(req.userId, { type: 'NOW_PLAYING', nowPlaying });
+  broadcast(user.slug, { type: 'NOW_PLAYING', nowPlaying });
+  res.json({ nowPlaying: user.nowPlaying });
+});
+
 // -- SONGS --
 
 app.get('/api/songs', auth, async (req, res) => {
@@ -329,7 +348,7 @@ app.get('/api/show/:slug', async (req, res) => {
       maxJumpsPerSession: user.maxJumpsPerSession, playNextCost: user.playNextCost,
       maxPlayNextPerSession: user.maxPlayNextPerSession, shoutoutCost: user.shoutoutCost,
       stripeOnboarded: user.stripeOnboarded, stripeEnabled: !!stripeInstance,
-      tipCost: user.tipCost });
+      tipCost: user.tipCost, queueOpen: user.queueOpen, nowPlaying: user.nowPlaying });
   } catch (e) { console.error('Show error:', e.message); res.status(500).json({ error: 'Server error' }); }
 });
 
@@ -338,6 +357,7 @@ app.post('/api/queue/:slug', async (req, res) => {
   if (!songTitle) return res.status(400).json({ error: 'Song title required' });
   const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
   if (!user) return res.status(404).json({ error: 'Performer not found' });
+  if (!user.queueOpen) return res.status(403).json({ error: 'The queue is currently closed' });
   const requestedTier = tier || 'STANDARD';
   const isPriority = requestedTier === 'PRIORITY';
   const isPlayNext = requestedTier === 'PLAY_NEXT';
@@ -460,6 +480,19 @@ app.get('/api/qrcode', auth, async (req, res) => {
   const url = CLIENT_URL + '/show/' + user.slug;
   const qrCode = await QRCode.toDataURL(url, { width: 300, margin: 2 });
   res.json({ qrCode, url });
+});
+
+// -- COIN PACKAGES --
+
+const COIN_PACKAGES = [
+  { id: 'starter',   name: 'Starter',    coins: 5,   price: 5,   emoji: '🎵', description: 'Good for 1–2 requests' },
+  { id: 'popular',   name: 'Popular',    coins: 15,  price: 15,  emoji: '⚡', description: 'Jump the queue 3x' },
+  { id: 'superfan',  name: 'Super Fan',  coins: 50,  price: 50,  emoji: '🔥', description: 'Full night of requests' },
+  { id: 'vip',       name: 'VIP',        coins: 100, price: 100, emoji: '👑', description: 'Play Next + tips + shoutouts' },
+];
+
+app.get('/api/packages/:slug', async (req, res) => {
+  res.json(COIN_PACKAGES);
 });
 
 // -- STRIPE --

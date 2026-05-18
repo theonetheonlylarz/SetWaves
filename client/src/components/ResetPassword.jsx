@@ -47,7 +47,7 @@ export default function ResetPassword() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: '20px' }}>
       <div className="card" style={{ width: '100%', maxWidth: '400px' }}>
-        <h1 style={{ color: 'var(--neon)', fontSize: 28, marginBottom: 16, textAlign: 'center', fontWeight: 800 }}>🎵 SetWaves</h1>
+        <h1 style={{ color: 'var(--neon)', fontSize: 28, marginBottom: 16, textAlign: 'center', fontWeight: 800 }}>🎵 Next Up</h1>
         <h2 style={{ marginBottom: '24px', fontWeight: 700, textAlign: 'center' }}>Reset Password</h2>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <input

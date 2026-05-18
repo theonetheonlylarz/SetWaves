@@ -395,7 +395,7 @@ export default function ShowPage() {
               <div>
                 <h2 style={{ fontWeight: 800, fontSize: '18px', marginBottom: '3px' }}>Get Coins</h2>
                 <p style={{ color: 'var(--muted)', fontSize: '13px' }}>🪙 $1 per coin · no expiry</p>
-                <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>✨ Your balance works at <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>any show on SetWaves</span> — leftover coins never disappear.</p>
+                <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '3px' }}>✨ Your balance works at <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>any show on Next Up</span> — leftover coins never disappear.</p>
               </div>
               <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
             </div>

@@ -13,7 +13,7 @@ const app = express();
 expressWs(app);
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'setwaves-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'nextup-secret-key-change-in-production';
 const CLIENT_URL = process.env.CLIENT_URL || process.env.APP_URL || ('http://localhost:' + PORT);
 
 let stripeInstance = null;
@@ -549,7 +549,7 @@ app.post('/api/stripe/payout', auth, async (req, res) => {
       amount: user.pendingEarningsCents,
       currency: 'usd',
       destination: user.stripeAccountId,
-      description: 'SetWaves earnings payout',
+      description: 'Next Up earnings payout',
     });
     await prisma.user.update({ where: { id: req.userId }, data: { pendingEarningsCents: 0 } });
     res.json({ success: true, amountCents: transfer.amount, transferId: transfer.id });

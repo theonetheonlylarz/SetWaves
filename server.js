@@ -5,7 +5,6 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
-const { exec } = require('child_process');
 const QRCode = require('qrcode');
 const path = require('path');
 
@@ -701,14 +700,4 @@ app.use((req, res) => {
   } else { res.status(404).json({ error: 'Not found' }); }
 });
 
-async function main() {
-  await new Promise(resolve => {
-    exec('npx prisma db push --accept-data-loss', (err) => {
-      if (err) console.error('prisma db push error:', err.message);
-      else console.log('DB schema synced');
-      resolve();
-    });
-  });
-  app.listen(PORT, () => console.log('Next Up running on port ' + PORT + ' - CLIENT_URL: ' + CLIENT_URL));
-}
-main().catch(console.error);
+app.listen(PORT, () => console.log('Next Up running on port ' + PORT + ' - CLIENT_URL: ' + CLIENT_URL));

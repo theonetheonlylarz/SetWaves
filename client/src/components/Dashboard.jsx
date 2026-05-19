@@ -266,7 +266,11 @@ export default function Dashboard() {
       const res = await fetch('/api/stripe/connect', { method: 'POST', headers })
       const data = await res.json()
       if (data.url) window.location.href = data.url
-      else setError(data.error || 'Could not start Stripe setup')
+      else if (data.error === 'CONNECT_NOT_ENABLED') {
+        setError('CONNECT_NOT_ENABLED')
+      } else {
+        setError(data.error || 'Could not start Stripe setup')
+      }
     } catch { setError('Network error') }
     finally { setConnectingStripe(false) }
   }
@@ -393,7 +397,22 @@ export default function Dashboard() {
       </header>
 
       <main style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 20px' }}>
-        {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+        {error && error !== 'CONNECT_NOT_ENABLED' && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+        {error === 'CONNECT_NOT_ENABLED' && (
+          <div style={{ background: 'rgba(245,158,11,0.08)', border: '1.5px solid rgba(245,158,11,0.4)', borderRadius: 'var(--radius-md)', padding: '16px 20px', marginBottom: '16px' }}>
+            <p style={{ fontWeight: 800, fontSize: '15px', color: 'var(--amber)', marginBottom: '6px' }}>⚠️ Stripe Connect not activated</p>
+            <p style={{ color: 'var(--muted)', fontSize: '13px', lineHeight: '1.6', marginBottom: '10px' }}>
+              Your Stripe account needs Connect enabled before performers can receive payouts. This is a one-time platform setup — it takes about 2 minutes.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <a href="https://dashboard.stripe.com/connect" target="_blank" rel="noreferrer"
+                style={{ background: 'rgba(245,158,11,0.15)', border: '1.5px solid rgba(245,158,11,0.5)', borderRadius: '8px', color: '#fbbf24', fontWeight: 700, fontSize: '13px', padding: '8px 16px', textDecoration: 'none', display: 'inline-block' }}>
+                → Enable Stripe Connect
+              </a>
+              <button onClick={() => setError(null)} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>Dismiss</button>
+            </div>
+          </div>
+        )}
 
         {stripeStatusMsg && (
           <div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.25)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -606,7 +606,13 @@ app.post('/api/stripe/connect', auth, async (req, res) => {
       type: 'account_onboarding',
     });
     res.json({ url: link.url });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('[stripe/connect] error:', e.message);
+    if (e.message && (e.message.includes('signed up for Connect') || e.message.includes('connect'))) {
+      return res.status(400).json({ error: 'CONNECT_NOT_ENABLED' });
+    }
+    res.status(500).json({ error: 'Could not start Stripe setup — please try again' });
+  }
 });
 
 app.post('/api/stripe/payout', auth, async (req, res) => {

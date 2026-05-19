@@ -119,11 +119,15 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !(await bcrypt.compare(password, user.password)))
-    return res.status(401).json({ error: 'Invalid credentials' });
-  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
-  res.json({ token, user: { id: user.id, email: user.email, slug: user.slug, displayName: user.displayName, stripeOnboarded: user.stripeOnboarded } });
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !(await bcrypt.compare(password, user.password)))
+      return res.status(401).json({ error: 'Invalid credentials' });
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, user: { id: user.id, email: user.email, slug: user.slug, displayName: user.displayName, stripeOnboarded: user.stripeOnboarded } });
+  } catch (e) {
+    res.status(500).json({ error: 'Login failed — please try again' });
+  }
 });
 
 app.post('/api/forgot-password', async (req, res) => {
@@ -699,7 +703,7 @@ app.use((req, res) => {
 
 async function main() {
   await new Promise(resolve => {
-    exec('npx prisma db push --accept-data-loss', (err) => {
+    exec('npx prisma generate && npx prisma db push --accept-data-loss', (err) => {
       if (err) console.error('prisma db push error:', err.message);
       else console.log('DB schema synced');
       resolve();

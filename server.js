@@ -5,6 +5,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
+const { exec } = require('child_process');
 const QRCode = require('qrcode');
 const path = require('path');
 
@@ -103,21 +104,23 @@ function optionalFanId(req) {
 app.post('/api/register', async (req, res) => {
   const { email, password, displayName } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-  const hashed = await bcrypt.hash(password, 10);
-  const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-  const slug = base + '-' + Math.random().toString(36).slice(2, 7);
   try {
+    const hashed = await bcrypt.hash(password, 10);
+    const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+    const slug = base + '-' + Math.random().toString(36).slice(2, 7);
     const user = await prisma.user.create({ data: { email, password: hashed, slug, displayName: displayName || base } });
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: { id: user.id, email: user.email, slug: user.slug, displayName: user.displayName } });
   } catch (e) {
+    console.error('[register] error:', e.message);
     if (e.code === 'P2002') return res.status(400).json({ error: 'Email already registered' });
-    res.status(500).json({ error: 'Registration failed' });
+    res.status(500).json({ error: 'Registration failed — ' + e.message });
   }
 });
 
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   try {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !(await bcrypt.compare(password, user.password)))
@@ -125,7 +128,8 @@ app.post('/api/login', async (req, res) => {
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, user: { id: user.id, email: user.email, slug: user.slug, displayName: user.displayName, stripeOnboarded: user.stripeOnboarded } });
   } catch (e) {
-    res.status(500).json({ error: 'Login failed — please try again' });
+    console.error('[login] error:', e.message);
+    res.status(500).json({ error: 'Login failed — ' + e.message });
   }
 });
 
@@ -700,4 +704,10 @@ app.use((req, res) => {
   } else { res.status(404).json({ error: 'Not found' }); }
 });
 
-app.listen(PORT, () => console.log('Next Up running on port ' + PORT + ' - CLIENT_URL: ' + CLIENT_URL));
+app.listen(PORT, () => {
+  console.log('Next Up running on port ' + PORT + ' - CLIENT_URL: ' + CLIENT_URL);
+  exec('npx prisma db push --accept-data-loss', (err, stdout, stderr) => {
+    if (err) console.error('[prisma db push] FAILED:', stderr || err.message);
+    else console.log('[prisma db push] schema synced');
+  });
+});

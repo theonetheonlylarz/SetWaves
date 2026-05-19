@@ -703,7 +703,7 @@ app.use((req, res) => {
 
 async function main() {
   await new Promise(resolve => {
-    exec('npx prisma generate && npx prisma db push --accept-data-loss', (err) => {
+    exec('npx prisma db push --accept-data-loss', (err) => {
       if (err) console.error('prisma db push error:', err.message);
       else console.log('DB schema synced');
       resolve();

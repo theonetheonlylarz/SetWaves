@@ -5,7 +5,8 @@
     "scripts": {
           "start": "node server.js",
           "dev": "nodemon server.js",
-          "build": "cd client && npm install && npm run build"
+          "build": "cd client && npm install && npm run build",
+          "postinstall": "prisma generate"
     },
     "dependencies": {
           "express": "^4.18.2",

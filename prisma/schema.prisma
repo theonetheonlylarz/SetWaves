@@ -109,7 +109,7 @@ model Tip {
 model TokenPackage {
   id          String   @id @default(uuid())
   name        String
-  coins       Int
+  coins       Int      @default(0)
   price       Int
   description String   @default("")
   createdAt   DateTime @default(now())

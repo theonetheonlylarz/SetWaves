@@ -615,6 +615,21 @@ app.post('/api/stripe/connect', auth, async (req, res) => {
   }
 });
 
+app.get('/api/stripe/connect/return', auth, async (req, res) => {
+if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
+try {
+const user = await prisma.user.findUnique({ where: { id: req.userId } });
+if (!user || !user.stripeAccountId) return res.json({ connected: false, onboarded: false });
+const account = await stripeInstance.accounts.retrieve(user.stripeAccountId);
+const onboarded = !!(account.charges_enabled && account.details_submitted);
+await prisma.user.update({ where: { id: req.userId }, data: { stripeOnboarded: onboarded } });
+res.json({ connected: true, onboarded, chargesEnabled: account.charges_enabled, detailsSubmitted: account.details_submitted });
+} catch (e) {
+console.error('[stripe/connect/return] error:', e.message);
+res.status(500).json({ error: e.message });
+}
+});
+
 app.post('/api/stripe/payout', auth, async (req, res) => {
   if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
   try {
@@ -663,6 +678,16 @@ app.post('/api/stripe/checkout/:slug', async (req, res) => {
       success_url: CLIENT_URL + '/show/' + user.slug + '?grant={CHECKOUT_SESSION_ID}',
       cancel_url: CLIENT_URL + '/show/' + user.slug,
     };
+    // Route payment directly to performer's connected Stripe account
+    if (user.stripeAccountId && user.stripeOnboarded) {
+      const platformFeeCents = Math.round(amountCents * 0.10); // 10% platform fee
+      sessionParams.payment_intent_data = {
+        application_fee_amount: platformFeeCents,
+        transfer_data: {
+          destination: user.stripeAccountId,
+        },
+      };
+    }
     const session = await stripeInstance.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e) { res.status(500).json({ error: e.message }); }

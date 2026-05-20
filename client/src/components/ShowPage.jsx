@@ -484,7 +484,7 @@ export default function ShowPage() {
               </div>
               <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+            <div className="sp-coin-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
               {(packages.length > 0 ? packages : [
                 { id: 'starter', name: 'Starter', coins: 5, price: 5, emoji: '🎵', description: 'Good for 1–2 requests' },
                 { id: 'popular', name: 'Popular', coins: 15, price: 15, emoji: '⚡', description: 'Jump the queue 3x' },
@@ -751,7 +751,25 @@ export default function ShowPage() {
           )}
         </div>
       </div>
-      <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }'}</style>
+      <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 430px) {
+  .sp-tier-row { flex-wrap: wrap !important; gap: 6px !important; }
+  .sp-tier-row > * { flex: 1 1 calc(50% - 3px) !important; min-width: 0 !important; white-space: normal !important; justify-content: center !important; text-align: center !important; }
+  .sp-coin-grid { gap: 8px !important; }
+  .sp-coin-grid > * { padding: 10px 6px !important; }
+  .sp-song-actions { flex-wrap: wrap !important; gap: 6px !important; }
+  .sp-song-actions > * { flex: 1 1 auto !important; min-width: 80px !important; }
+  .sp-header-title { font-size: 15px !important; }
+  .sp-header-inner { padding: 0 12px !important; }
+  .sp-genre-chips { gap: 6px !important; }
+  .sp-genre-chips .chip { font-size: 11px !important; padding: 4px 9px !important; }
+  .sp-main-pad { padding: 12px !important; }
+  .sp-card { padding: 14px !important; }
+  .sp-modal-inner { padding: 14px !important; border-radius: 12px !important; }
+  .sp-queue-item { padding: 10px 12px !important; }
+}'}</style>
     </div>
   )
 }

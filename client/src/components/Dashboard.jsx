@@ -382,9 +382,9 @@ export default function Dashboard() {
             <div style={{ fontSize: '11px', color: 'var(--muted)', letterSpacing: '0.01em' }}>{profile.displayName}</div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="dash-header-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {totalEarned !== null && (
-            <div style={{ fontSize: '12px', color: 'var(--neon)', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '20px', padding: '4px 12px', fontWeight: 700 }}>
+            <div className="dash-earnings-badge" style={{ fontSize: '12px', color: 'var(--neon)', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '20px', padding: '4px 12px', fontWeight: 700 }}>
               {'$' + totalEarned + ' earned'}
             </div>
           )}
@@ -554,7 +554,7 @@ export default function Dashboard() {
                       <p style={{ color: 'var(--muted)', fontSize: '11px', marginTop: '3px' }}>{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
+                  <div className="queue-item-actions" style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
                     <button onClick={() => acceptQueueItem(item.id)} style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--neon)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: '7px', padding: '6px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}>
                       Accept
                     </button>
@@ -637,7 +637,7 @@ export default function Dashboard() {
                       )}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
+                  <div className="queue-item-actions" style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
                     <button onClick={() => markPlayed(item.id)} className="btn-secondary" style={{ fontSize: '12px', padding: '6px 14px' }}>
                       Played
                     </button>
@@ -727,7 +727,7 @@ export default function Dashboard() {
                   <div style={{ display: 'inline-block', background: '#fff', padding: '16px', borderRadius: '16px', marginBottom: '24px', boxShadow: '0 0 40px rgba(0,255,136,0.1)' }}>
                     <img src={qr.qrCode} alt="QR Code" style={{ width: '220px', height: '220px', display: 'block' }} />
                   </div>
-                  <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '20px', fontFamily: 'monospace', background: 'var(--surface2)', display: 'inline-block', padding: '6px 14px', borderRadius: '6px', border: '1px solid var(--border)' }}>{qr.url}</p>
+                  <p className="qr-url-display" style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '20px', fontFamily: 'monospace', background: 'var(--surface2)', display: 'block', padding: '6px 14px', borderRadius: '6px', border: '1px solid var(--border)', overflowWrap: 'break-word', wordBreak: 'break-all' }}>{qr.url}</p>
                   <div style={{ marginTop: '4px' }}>
                     <a href={qr.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>Open Fan Page</a>
                   </div>
@@ -758,7 +758,7 @@ export default function Dashboard() {
               <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '18px' }}>Set coin costs for each tier · 1 coin = $1 · <span style={{ color: 'var(--neon)', fontWeight: 700 }}>you keep 90%</span>, platform takes 10%</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="pricing-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🎵 Add to Queue (coins)</label>
                     <input type="number" min="1" max="100" value={coinCost} onChange={e => setCoinCost(e.target.value)} style={{ width: '100%' }} />
@@ -865,7 +865,20 @@ export default function Dashboard() {
         )}
       </main>
 
-      <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }'}</style>
+      <style>{`
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 430px) {
+  .dash-header-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px !important; }
+  .dash-header-actions a { font-size: 12px !important; padding: 5px 10px !important; }
+  .dash-header-actions .btn-secondary { font-size: 12px !important; padding: 5px 8px !important; }
+  .dash-earnings-badge { display: none !important; }
+  .pricing-grid { grid-template-columns: 1fr !important; }
+  .queue-item-actions { flex-direction: column !important; align-items: stretch !important; gap: 4px !important; min-width: 72px; }
+  .queue-item-actions button { width: 100% !important; }
+  .qr-url-display { display: block !important; text-align: left !important; }
+}
+`}</style>
     </div>
   )
                                                                                 }

@@ -323,7 +323,7 @@ export default function ShowPage() {
   }
 
   if (showNotFound) return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: 'var(--bg)', textAlign: 'center', padding: '24px' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', background: 'var(--bg)', textAlign: 'center', padding: '24px', overflowX: 'hidden', maxWidth: '100vw', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ fontSize: '52px', marginBottom: '4px' }}>🎵</div>
       <h1 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text)' }}>Show not found</h1>
       <p style={{ color: 'var(--muted)', fontSize: '14px', maxWidth: '280px' }}>This performer link doesn't exist or may have changed. Try scanning the QR code again.</p>

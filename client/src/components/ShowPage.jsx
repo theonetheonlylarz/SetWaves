@@ -507,14 +507,13 @@ export default function ShowPage() {
                 { id: 'vip', name: 'VIP', coins: 100, price: 100, emoji: '👑', description: 'Play Next + shoutouts' },
               ]).map(pkg => (
                 <button key={pkg.id} onClick={() => buyCoins(pkg.coins)} disabled={buying}
-                  style={{ minWidth: 0, overflow: 'hidden', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '16px 12px', cursor: 'pointer', color: 'var(--text)', textAlign: 'center', transition: 'all 0.15s', fontFamily: 'inherit' }}
+                  style={{ minWidth: 0, overflow: 'hidden', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px', cursor: 'pointer', color: 'var(--text)', textAlign: 'left', transition: 'all 0.15s', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', minHeight: '90px' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(0,255,136,0.4)'; e.currentTarget.style.background='rgba(0,255,136,0.04)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)'; }}>
-                  <div style={{ fontSize: '18px', marginBottom: '4px' }}>{pkg.emoji}</div>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', marginBottom: '2px' }}>{pkg.name}</div>
-                  <div style={{ fontSize: '18px', fontWeight: 900, color: 'var(--neon)', marginBottom: '3px' }}>🪙 {pkg.coins}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{pkg.description}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', fontWeight: 700 }}>${pkg.price}.00</div>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}><span style={{ fontSize: '16px' }}>{pkg.emoji}</span><span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)' }}>{pkg.name}</span></div>
+                   <div style={{ fontSize: '20px', fontWeight: 800, color: '#00ff88' }}>🪙 {pkg.coins}</div>
+                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.55)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{pkg.description}</div>
+                   <div style={{ fontSize: '13px', fontWeight: 700, marginTop: 'auto' }}>${pkg.price}.00</div>
                 </button>
               ))}
             </div>

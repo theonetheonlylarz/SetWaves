@@ -499,35 +499,35 @@ export default function ShowPage() {
               </div>
               <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
             </div>
-            <div className="sp-coin-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '16px', overflow: 'hidden' }}>
+            <div className="sp-coin-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', width: '100%', boxSizing: 'border-box', padding: '0', margin: '12px 0' }}>
               {(packages.length > 0 ? packages : [
                 { id: 'starter', name: 'Starter', coins: 5, price: 5, emoji: '🎵', description: 'Good for 1–2 requests' },
                 { id: 'popular', name: 'Popular', coins: 15, price: 15, emoji: '⚡', description: 'Jump the queue 3x' },
                 { id: 'superfan', name: 'Super Fan', coins: 50, price: 50, emoji: '🔥', description: 'Full night of requests' },
                 { id: 'vip', name: 'VIP', coins: 100, price: 100, emoji: '👑', description: 'Play Next + shoutouts' },
               ]).map(pkg => (
-                <button key={pkg.id} onClick={() => buyCoins(pkg.coins)} disabled={buying}
-                  style={{ minWidth: 0, overflow: 'hidden', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '10px', cursor: 'pointer', color: 'var(--text)', textAlign: 'left', transition: 'all 0.15s', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', minHeight: '90px' }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(0,255,136,0.4)'; e.currentTarget.style.background='rgba(0,255,136,0.04)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)'; }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', width: '100%' }}><span style={{ fontSize: '16px' }}>{pkg.emoji}</span><span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)' }}>{pkg.name}</span></div>
-                   <div style={{ fontSize: '20px', fontWeight: 800, color: '#00ff88' }}>🪙 {pkg.coins}</div>
-                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.55)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{pkg.description}</div>
-                   <div style={{ fontSize: '13px', fontWeight: 700, marginTop: 'auto' }}>${pkg.price}.00</div>
+                                <button key={pkg.id} onClick={() => buyCoins(pkg.coins)} disabled={buying}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '10px 8px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', cursor: 'pointer', minHeight: '80px', width: '100%', boxSizing: 'border-box', overflow: 'hidden', textAlign: 'left', gap: '3px', color: 'var(--text)', fontFamily: 'inherit', transition: 'all 0.15s' }}
+                  >
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{pkg.emoji} {pkg.name}</span>
+                  <span style={{ fontSize: '22px', fontWeight: 900, color: '#00ff88', lineHeight: 1 }}>{pkg.coins}</span>
+                  <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: '1.3' }}>{pkg.description}</span>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#fff', marginTop: 'auto' }}>${pkg.price}.00</span>
                 </button>
               ))}
             </div>
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Custom amount</label>
-              <input type="number" min="1" max="999" placeholder="How many coins? ($1 each)" value={customCoins} onChange={e => setCustomCoins(e.target.value)} onKeyDown={e => e.key === 'Enter' && customCoins && buyCoins(customCoins)} style={{ width: '100%', marginBottom: '8px', boxSizing: 'border-box' }} />
-              {customCoins && parseInt(customCoins) > 0 && (
-                <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '8px' }}>= ${parseInt(customCoins).toFixed(2)}</p>
-              )}
-              <button onClick={() => buyCoins(customCoins)} className="btn-primary" disabled={!customCoins || buying} style={{ width: '100%' }}>
-                {buying ? '...' : (customCoins && parseInt(customCoins) > 0 ? `Buy ${parseInt(customCoins)} coin${parseInt(customCoins) !== 1 ? 's' : ''} — ${parseInt(customCoins)}.00` : 'Buy')}
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <input type="number" min="1" placeholder="Enter coins" value={customCoins} onChange={e => setCustomCoins(e.target.value)} style={{ width: '100%', height: '48px', fontSize: '16px', padding: '0 12px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', color: '#fff', boxSizing: 'border-box' }} />
+                {customCoins && parseInt(customCoins) > 0 && (
+                  <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '8px' }}>= ${parseInt(customCoins).toFixed(2)}</p>
+                )}
+                <button onClick={() => buyCoins(customCoins)} className="btn-primary" disabled={!customCoins || buying} style={{ width: '100%', height: '48px', background: '#00ff88', color: '#000', fontWeight: 800, fontSize: '15px', borderRadius: '10px', border: 'none', cursor: 'pointer' }}>
+                  {buying ? '...' : (customCoins && parseInt(customCoins) > 0 ? `Buy ${parseInt(customCoins)} coin${parseInt(customCoins) !== 1 ? 's' : ''} — $${parseInt(customCoins)}.00` : 'Buy')}
+                </button>
+              </div>
             </div>
-          </div>
         ) : (
           <>
             {/* ── Request bottom-sheet modal ── */}

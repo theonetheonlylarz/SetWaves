@@ -490,7 +490,7 @@ export default function ShowPage() {
         })()}
 
         {buyMode ? (
-          <div className="card" style={{ marginBottom: '24px' }}>
+          <div className="card" style={{ marginBottom: '24px', width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
                 <h2 style={{ fontWeight: 800, fontSize: '18px', marginBottom: '3px' }}>Get Coins</h2>
@@ -499,7 +499,7 @@ export default function ShowPage() {
               </div>
               <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
             </div>
-            <div className="sp-coin-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+            <div className="sp-coin-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '16px', overflow: 'hidden' }}>
               {(packages.length > 0 ? packages : [
                 { id: 'starter', name: 'Starter', coins: 5, price: 5, emoji: '🎵', description: 'Good for 1–2 requests' },
                 { id: 'popular', name: 'Popular', coins: 15, price: 15, emoji: '⚡', description: 'Jump the queue 3x' },
@@ -507,7 +507,7 @@ export default function ShowPage() {
                 { id: 'vip', name: 'VIP', coins: 100, price: 100, emoji: '👑', description: 'Play Next + shoutouts' },
               ]).map(pkg => (
                 <button key={pkg.id} onClick={() => buyCoins(pkg.coins)} disabled={buying}
-                  style={{ background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '16px 12px', cursor: 'pointer', color: 'var(--text)', textAlign: 'center', transition: 'all 0.15s', fontFamily: 'inherit' }}
+                  style={{ minWidth: 0, overflow: 'hidden', background: 'var(--surface2)', border: '1.5px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '16px 12px', cursor: 'pointer', color: 'var(--text)', textAlign: 'center', transition: 'all 0.15s', fontFamily: 'inherit' }}
                   onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(0,255,136,0.4)'; e.currentTarget.style.background='rgba(0,255,136,0.04)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)'; }}>
                   <div style={{ fontSize: '18px', marginBottom: '4px' }}>{pkg.emoji}</div>

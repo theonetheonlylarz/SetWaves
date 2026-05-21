@@ -38,6 +38,8 @@ export default function ShowPage() {
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
+  const [authDisplayName, setAuthDisplayName] = useState('')
+  const [fanDisplayName, setFanDisplayName] = useState(() => localStorage.getItem('nextup_fan_name') || '')
   const [authError, setAuthError] = useState('')
   const effectiveCoins = (fanToken && fanBalance !== null) ? fanBalance : coins
   const [redeeming, setRedeeming] = useState(false)
@@ -190,6 +192,10 @@ export default function ShowPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Auth failed')
       localStorage.setItem(FAN_TOKEN_KEY, data.token)
+      if (authMode === 'signup' && authDisplayName.trim()) {
+        localStorage.setItem('nextup_fan_name', authDisplayName.trim())
+        setFanDisplayName(authDisplayName.trim())
+      }
       setFanToken(data.token); setFanEmail(data.fan.email); setFanBalance(data.fan.coinBalance)
       if (coins > 0 && data.fan.coinBalance === 0) {
         const newBal = coins; setFanBalance(newBal); setCoins(0)
@@ -198,13 +204,13 @@ export default function ShowPage() {
           body: JSON.stringify({ coinBalance: newBal }),
         }).catch(() => {})
       }
-      setShowAuthModal(false); setAuthEmail(''); setAuthPassword('')
+      setShowAuthModal(false); setAuthEmail(''); setAuthPassword(''); setAuthDisplayName('')
     } catch (err) { setAuthError(err.message) }
     finally { setAuthLoading(false) }
   }
 
   const handleFanLogout = () => {
-    localStorage.removeItem(FAN_TOKEN_KEY); setFanToken(null); setFanEmail(''); setFanBalance(null)
+    localStorage.removeItem(FAN_TOKEN_KEY); localStorage.removeItem('nextup_fan_name'); setFanToken(null); setFanEmail(''); setFanBalance(null); setFanDisplayName('')
   }
 
   const openBuyMode = () => {
@@ -366,7 +372,10 @@ export default function ShowPage() {
               {authMode === 'login' ? 'Sign in to keep your coin balance across devices.' : 'Create a free account so your coins never disappear.'}
             </p>
             <form onSubmit={handleFanAuth} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <input type="email" placeholder="Email address" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required autoFocus />
+              {authMode === 'signup' && (
+                <input type="text" placeholder="Display name (e.g. your first name)" value={authDisplayName} onChange={e => setAuthDisplayName(e.target.value)} autoFocus />
+              )}
+              <input type="email" placeholder="Email address" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required autoFocus={authMode !== 'signup'} />
               <input type="password" placeholder={authMode === 'signup' ? 'Password (min 6 chars)' : 'Password'} value={authPassword} onChange={e => setAuthPassword(e.target.value)} required />
               {authError && (
                 <div style={{ background: 'rgba(255,91,91,0.08)', border: '1px solid rgba(255,91,91,0.25)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: '#ff5b5b' }}>{authError}</div>
@@ -389,14 +398,20 @@ export default function ShowPage() {
         <div style={{ position: 'absolute', top: '16px', right: '16px' }}>
           {fanToken ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{fanEmail}</span>
+              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{fanDisplayName || fanEmail}</span>
               <button onClick={handleFanLogout} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--muted)', fontSize: '11px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>Sign out</button>
             </div>
           ) : (
-            <button onClick={() => { setShowAuthModal(true); setAuthError('') }}
-              style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--muted)', fontSize: '12px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-              Sign in
-            </button>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button onClick={() => { setAuthMode('login'); setShowAuthModal(true); setAuthError('') }}
+                style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--muted)', fontSize: '12px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                Sign in
+              </button>
+              <button onClick={() => { setAuthMode('signup'); setShowAuthModal(true); setAuthError('') }}
+                style={{ background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.35)', borderRadius: '8px', color: 'var(--neon)', fontSize: '12px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+                Create account
+              </button>
+            </div>
           )}
         </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', marginBottom: '16px', padding: '5px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '20px' }}>
@@ -505,12 +520,13 @@ export default function ShowPage() {
             </div>
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Custom amount</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="number" min="1" max="999" placeholder="How many coins?" value={customCoins} onChange={e => setCustomCoins(e.target.value)} onKeyDown={e => e.key === 'Enter' && customCoins && buyCoins(customCoins)} style={{ flex: 1 }} />
-                <button onClick={() => buyCoins(customCoins)} className="btn-primary" disabled={!customCoins || buying} style={{ flexShrink: 0, padding: '0 18px', whiteSpace: 'nowrap' }}>
-                  {buying ? '...' : (customCoins && parseInt(customCoins) > 0 ? 'Pay $' + parseInt(customCoins) : 'Buy')}
-                </button>
-              </div>
+              <input type="number" min="1" max="999" placeholder="How many coins? ($1 each)" value={customCoins} onChange={e => setCustomCoins(e.target.value)} onKeyDown={e => e.key === 'Enter' && customCoins && buyCoins(customCoins)} style={{ width: '100%', marginBottom: '8px', boxSizing: 'border-box' }} />
+              {customCoins && parseInt(customCoins) > 0 && (
+                <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '8px' }}>= ${parseInt(customCoins).toFixed(2)}</p>
+              )}
+              <button onClick={() => buyCoins(customCoins)} className="btn-primary" disabled={!customCoins || buying} style={{ width: '100%' }}>
+                {buying ? '...' : (customCoins && parseInt(customCoins) > 0 ? `Buy ${parseInt(customCoins)} coin${parseInt(customCoins) !== 1 ? 's' : ''} — ${parseInt(customCoins)}.00` : 'Buy')}
+              </button>
             </div>
           </div>
         ) : (

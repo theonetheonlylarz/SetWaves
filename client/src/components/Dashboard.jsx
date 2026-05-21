@@ -50,6 +50,7 @@ export default function Dashboard() {
   const [stripeOnboarded, setStripeOnboarded] = useState(false)
   const [connectingStripe, setConnectingStripe] = useState(false)
   const [requestingPayout, setRequestingPayout] = useState(false)
+  const [payoutMsg, setPayoutMsg] = useState('')
   const [pendingEarningsCents, setPendingEarningsCents] = useState(0)
   const [stripeStatusMsg, setStripeStatusMsg] = useState('')
   const navigate = useNavigate()
@@ -253,10 +254,11 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/stripe/payout', { method: 'POST', headers })
       const data = await res.json()
-      if (!res.ok) { setError(data.error || 'Payout failed'); return }
+      if (!res.ok) { setPayoutMsg(data.error || 'Payout failed'); setTimeout(() => setPayoutMsg(''), 4000); return }
       setPendingEarningsCents(0)
-      setStripeStatusMsg('$' + (data.amountCents / 100).toFixed(2) + ' sent to your account! Expect it in 1–2 business days.')
-    } catch { setError('Network error') }
+      setPayoutMsg('✓ Paid out!')
+      setTimeout(() => setPayoutMsg(''), 4000)
+    } catch { setPayoutMsg('Network error'); setTimeout(() => setPayoutMsg(''), 4000) }
     finally { setRequestingPayout(false) }
   }
 
@@ -811,10 +813,17 @@ export default function Dashboard() {
                       <p style={{ color: 'var(--neon)', fontWeight: 900, fontSize: '24px' }}>${(pendingEarningsCents / 100).toFixed(2)}</p>
                     </div>
                     {stripeOnboarded ? (
-                      <button onClick={requestPayout} disabled={requestingPayout}
-                        style={{ background: 'rgba(0,255,136,0.12)', border: '1.5px solid rgba(0,255,136,0.35)', borderRadius: '9px', color: 'var(--neon)', fontWeight: 800, fontSize: '14px', padding: '11px 22px', cursor: requestingPayout ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
-                        {requestingPayout ? '⏳ Sending...' : '→ Pay Out Now'}
-                      </button>
+                      <>
+                        <button onClick={requestPayout} disabled={requestingPayout}
+                          style={{ background: 'rgba(0,255,136,0.12)', border: '1.5px solid rgba(0,255,136,0.35)', borderRadius: '9px', color: 'var(--neon)', fontWeight: 800, fontSize: '14px', padding: '11px 22px', cursor: requestingPayout ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
+                          {requestingPayout ? '⏳ Sending...' : '→ Pay Out Now'}
+                        </button>
+                        {payoutMsg && (
+                          <p style={{ color: payoutMsg.startsWith('✓') ? '#00ff88' : '#ef4444', fontSize: '13px', marginTop: '8px', fontWeight: 700 }}>
+                            {payoutMsg}
+                          </p>
+                        )}
+                      </>
                     ) : (
                       <p style={{ color: '#f59e0b', fontSize: '12px', fontWeight: 600 }}>Connect a payout account below to withdraw</p>
                     )}

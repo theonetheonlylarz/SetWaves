@@ -150,24 +150,31 @@ export default function ImportSongsModal({ open, onClose, existingSongs, token, 
 
   // ---------- styles (consistent with Dashboard) ----------
   const overlayStyle = {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-    WebkitBackdropFilter: 'blur(6px)', zIndex: 1000, display: 'flex',
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0,0,0,0.78)',
+    WebkitBackdropFilter: 'blur(6px)', backdropFilter: 'blur(6px)',
+    zIndex: 2000, display: 'flex',
     alignItems: 'center', justifyContent: 'center', padding: '16px',
+    overflowY: 'auto', WebkitOverflowScrolling: 'touch',
   }
   const panelStyle = {
-    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
-    width: '100%', maxWidth: '720px', maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+    background: '#0f0f1a', color: '#e8e8f5',
+    border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px',
+    width: '100%', maxWidth: '720px', maxHeight: '90vh',
+    display: 'flex', flexDirection: 'column',
     boxShadow: '0 30px 80px rgba(0,0,0,0.6)', overflow: 'hidden',
+    position: 'relative',
   }
   const headerStyle = {
-    padding: '16px 20px', borderBottom: '1px solid var(--border)',
+    padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    flexShrink: 0,
   }
-  const bodyStyle = { padding: '20px', overflow: 'auto', flex: 1 }
+  const bodyStyle = { padding: '20px', overflowY: 'auto', flex: '1 1 auto', WebkitOverflowScrolling: 'touch', minHeight: 0 }
   const footerStyle = {
-    padding: '14px 20px', borderTop: '1px solid var(--border)',
+    padding: '14px 20px', borderTop: '1px solid rgba(255,255,255,0.08)',
     display: 'flex', gap: '8px', justifyContent: 'space-between', alignItems: 'center',
-    background: 'rgba(0,0,0,0.2)',
+    background: 'rgba(0,0,0,0.25)', flexShrink: 0,
   }
 
   // ---------- success state ----------

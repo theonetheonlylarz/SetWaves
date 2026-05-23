@@ -4,3 +4,5 @@ client/node_modules/
 *.db
 dist/
 client/dist/
+public/
+client/package-lock.json

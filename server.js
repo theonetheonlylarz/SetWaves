@@ -313,8 +313,16 @@ async function getSpotifyToken() {
   return spotifyToken.value;
 }
 
+app.get('/api/import/sources', auth, (req, res) => {
+  res.json({
+    spotify: !!(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET),
+  });
+});
+
 app.post('/api/songs/import/spotify', auth, async (req, res) => {
   const { url } = req.body || {};
+  if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET)
+    return res.status(503).json({ error: 'SPOTIFY_NOT_CONFIGURED' });
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'Spotify URL required' });
   const match = url.match(/playlist[\/:]([a-zA-Z0-9]+)/);
   if (!match) return res.status(400).json({ error: 'That doesn\'t look like a Spotify playlist link' });

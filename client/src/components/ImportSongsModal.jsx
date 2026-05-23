@@ -68,7 +68,15 @@ function ImportSongsModalInner({ open, onClose, existingSongs, token, onImported
   const [error, setError] = useState('')
   const [bulkGenre, setBulkGenre] = useState('Other')
   const [successCount, setSuccessCount] = useState(null)
+  const [spotifyEnabled, setSpotifyEnabled] = useState(true)
   const fileInputRef = useRef(null)
+
+  React.useEffect(() => {
+    fetch('/api/import/sources', { headers: { Authorization: 'Bearer ' + token } })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setSpotifyEnabled(!!d.spotify) })
+      .catch(() => {})
+  }, [token])
 
   const existingKeys = useMemo(() => {
     const set = new Set()
@@ -295,20 +303,48 @@ Free Bird`}
               )}
 
               {source === 'spotify' && (
-                <div>
-                  <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '10px' }}>
-                    Paste a public Spotify playlist link. In Spotify: ⋯ → Share → Copy link to playlist.
-                  </p>
-                  <input
-                    value={spotifyUrl}
-                    onChange={e => setSpotifyUrl(e.target.value)}
-                    placeholder="https://open.spotify.com/playlist/…"
-                    style={{ width: '100%' }}
-                  />
-                  <p style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '8px' }}>
-                    Playlist must be public. Private or collaborative playlists won't work.
-                  </p>
-                </div>
+                spotifyEnabled ? (
+                  <div>
+                    <p style={{ fontSize: '13px', color: '#9898b0', marginBottom: '10px' }}>
+                      Paste a public Spotify playlist link. In Spotify: ⋯ → Share → Copy link to playlist.
+                    </p>
+                    <input
+                      value={spotifyUrl}
+                      onChange={e => setSpotifyUrl(e.target.value)}
+                      placeholder="https://open.spotify.com/playlist/…"
+                      style={{ width: '100%' }}
+                    />
+                    <p style={{ fontSize: '11px', color: '#9898b0', marginTop: '8px' }}>
+                      Playlist must be public. Private or collaborative playlists won't work.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{
+                    background: 'rgba(245,158,11,0.08)',
+                    border: '1px solid rgba(245,158,11,0.3)',
+                    borderRadius: '10px', padding: '16px',
+                  }}>
+                    <p style={{ fontWeight: 700, fontSize: '14px', marginBottom: '6px', color: '#f59e0b' }}>
+                      ⚙️ Spotify import needs a one-time setup
+                    </p>
+                    <p style={{ fontSize: '13px', color: '#e8e8f5', marginBottom: '12px', lineHeight: 1.5 }}>
+                      Spotify requires the app owner to register for free API keys. Takes about 3 minutes.
+                    </p>
+                    <ol style={{ fontSize: '12px', color: '#9898b0', paddingLeft: '20px', lineHeight: 1.7, marginBottom: '12px' }}>
+                      <li>Go to <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer" style={{ color: '#00ff88' }}>developer.spotify.com/dashboard</a> and log in</li>
+                      <li>Click <strong>Create app</strong>. Use any name; for redirect URI use <code style={{ background: 'rgba(255,255,255,0.07)', padding: '1px 5px', borderRadius: '3px' }}>http://localhost</code></li>
+                      <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong></li>
+                      <li>In Railway → your service → <strong>Variables</strong>, add:<br/>
+                        <code style={{ background: 'rgba(255,255,255,0.07)', padding: '1px 5px', borderRadius: '3px', display: 'inline-block', marginTop: '4px' }}>SPOTIFY_CLIENT_ID=...</code><br/>
+                        <code style={{ background: 'rgba(255,255,255,0.07)', padding: '1px 5px', borderRadius: '3px', display: 'inline-block', marginTop: '2px' }}>SPOTIFY_CLIENT_SECRET=...</code>
+                      </li>
+                      <li>Railway redeploys automatically. Reload this page and Spotify import will work.</li>
+                    </ol>
+                    <p style={{ fontSize: '11px', color: '#9898b0', marginTop: '8px' }}>
+                      For now, use <strong>Paste a list</strong>, <strong>Upload file</strong>, or <strong>Quick-start</strong> — they all work without setup.
+                    </p>
+                  </div>
+                )
               )}
 
               {source === 'file' && (
@@ -423,7 +459,7 @@ Free Bird`}
             {step === 1 && source === 'paste' && (
               <button onClick={handlePasteContinue} className="btn-primary" disabled={busy || !pasteText.trim()}>Continue</button>
             )}
-            {step === 1 && source === 'spotify' && (
+            {step === 1 && source === 'spotify' && spotifyEnabled && (
               <button onClick={handleSpotifyContinue} className="btn-primary" disabled={busy || !spotifyUrl.trim()}>
                 {busy ? 'Fetching…' : 'Continue'}
               </button>

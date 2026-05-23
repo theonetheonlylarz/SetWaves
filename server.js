@@ -212,6 +212,85 @@ app.post('/api/songs', auth, async (req, res) => {
   res.json(await prisma.song.create({ data: { title, artist: artist || '', genre: genre || 'Other', userId: req.userId, order: count } }));
 });
 
+app.post('/api/songs/bulk', auth, async (req, res) => {
+  const { songs } = req.body;
+  if (!Array.isArray(songs) || songs.length === 0)
+    return res.status(400).json({ error: 'songs array required' });
+  if (songs.length > 500)
+    return res.status(400).json({ error: 'Maximum 500 songs per import' });
+  const cleaned = [];
+  for (const s of songs) {
+    const title = (s.title || '').toString().trim();
+    if (!title) continue;
+    cleaned.push({
+      title: title.slice(0, 200),
+      artist: ((s.artist || '').toString().trim()).slice(0, 200),
+      genre: ((s.genre || 'Other').toString().trim()).slice(0, 40) || 'Other',
+    });
+  }
+  if (cleaned.length === 0) return res.status(400).json({ error: 'No valid songs provided' });
+  const startOrder = await prisma.song.count({ where: { userId: req.userId } });
+  const data = cleaned.map((s, i) => ({ ...s, userId: req.userId, order: startOrder + i }));
+  try {
+    const result = await prisma.song.createMany({ data });
+    res.json({ count: result.count });
+  } catch (e) {
+    console.error('Bulk song import error:', e.message);
+    res.status(500).json({ error: 'Failed to import songs' });
+  }
+});
+
+// Spotify client-credentials token cache (server-wide, public-data only)
+let spotifyToken = { value: null, expiresAt: 0 };
+async function getSpotifyToken() {
+  const clientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new Error('Spotify not configured on server');
+  if (spotifyToken.value && spotifyToken.expiresAt > Date.now() + 30000) return spotifyToken.value;
+  const basic = Buffer.from(clientId + ':' + clientSecret).toString('base64');
+  const resp = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=client_credentials',
+  });
+  if (!resp.ok) throw new Error('Spotify auth failed');
+  const json = await resp.json();
+  spotifyToken = { value: json.access_token, expiresAt: Date.now() + (json.expires_in * 1000) };
+  return spotifyToken.value;
+}
+
+app.post('/api/songs/import/spotify', auth, async (req, res) => {
+  const { url } = req.body || {};
+  if (!url || typeof url !== 'string') return res.status(400).json({ error: 'Spotify URL required' });
+  const match = url.match(/playlist[\/:]([a-zA-Z0-9]+)/);
+  if (!match) return res.status(400).json({ error: 'That doesn\'t look like a Spotify playlist link' });
+  const playlistId = match[1];
+  try {
+    const token = await getSpotifyToken();
+    const tracks = [];
+    let next = 'https://api.spotify.com/v1/playlists/' + playlistId + '/tracks?fields=items(track(name,artists(name))),next&limit=100';
+    while (next && tracks.length < 1000) {
+      const resp = await fetch(next, { headers: { Authorization: 'Bearer ' + token } });
+      if (resp.status === 404) return res.status(404).json({ error: 'Playlist not found or is private' });
+      if (!resp.ok) return res.status(502).json({ error: 'Spotify returned ' + resp.status });
+      const data = await resp.json();
+      for (const item of (data.items || [])) {
+        const t = item && item.track;
+        if (!t || !t.name) continue;
+        tracks.push({
+          title: t.name,
+          artist: (t.artists || []).map(a => a.name).filter(Boolean).join(', '),
+        });
+      }
+      next = data.next;
+    }
+    res.json({ tracks });
+  } catch (e) {
+    console.error('Spotify import error:', e.message);
+    res.status(500).json({ error: e.message || 'Spotify import failed' });
+  }
+});
+
 app.delete('/api/songs/:id', auth, async (req, res) => {
   await prisma.song.deleteMany({ where: { id: req.params.id, userId: req.userId } });
   res.json({ success: true });

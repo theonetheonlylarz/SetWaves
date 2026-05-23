@@ -1,0 +1,135 @@
+[
+  {
+    "name": "Top 40 Wedding",
+    "description": "Crowd-pleasers for receptions and dance floors",
+    "songs": [
+      { "title": "Uptown Funk", "artist": "Mark Ronson ft. Bruno Mars", "genre": "Pop" },
+      { "title": "Shut Up and Dance", "artist": "Walk the Moon", "genre": "Pop" },
+      { "title": "I Wanna Dance with Somebody", "artist": "Whitney Houston", "genre": "Pop" },
+      { "title": "Don't Stop Believin'", "artist": "Journey", "genre": "Rock" },
+      { "title": "Mr. Brightside", "artist": "The Killers", "genre": "Rock" },
+      { "title": "I Gotta Feeling", "artist": "Black Eyed Peas", "genre": "Pop" },
+      { "title": "September", "artist": "Earth, Wind & Fire", "genre": "R&B" },
+      { "title": "Sweet Caroline", "artist": "Neil Diamond", "genre": "Pop" },
+      { "title": "Cupid Shuffle", "artist": "Cupid", "genre": "R&B" },
+      { "title": "Twist and Shout", "artist": "The Beatles", "genre": "Rock" },
+      { "title": "Y.M.C.A.", "artist": "Village People", "genre": "Pop" },
+      { "title": "Dancing Queen", "artist": "ABBA", "genre": "Pop" },
+      { "title": "Blinding Lights", "artist": "The Weeknd", "genre": "Pop" },
+      { "title": "Levitating", "artist": "Dua Lipa", "genre": "Pop" },
+      { "title": "Marry You", "artist": "Bruno Mars", "genre": "Pop" },
+      { "title": "Cha Cha Slide", "artist": "DJ Casper", "genre": "Hip-Hop" },
+      { "title": "Wagon Wheel", "artist": "Darius Rucker", "genre": "Country" },
+      { "title": "Wonderwall", "artist": "Oasis", "genre": "Rock" },
+      { "title": "Livin' on a Prayer", "artist": "Bon Jovi", "genre": "Rock" }
+    ]
+  },
+  {
+    "name": "Classic Rock Bar Set",
+    "description": "Singalong rock staples for late-night crowds",
+    "songs": [
+      { "title": "Don't Stop Believin'", "artist": "Journey", "genre": "Rock" },
+      { "title": "Sweet Child O' Mine", "artist": "Guns N' Roses", "genre": "Rock" },
+      { "title": "Hotel California", "artist": "Eagles", "genre": "Rock" },
+      { "title": "Bohemian Rhapsody", "artist": "Queen", "genre": "Rock" },
+      { "title": "Free Bird", "artist": "Lynyrd Skynyrd", "genre": "Rock" },
+      { "title": "Born to Run", "artist": "Bruce Springsteen", "genre": "Rock" },
+      { "title": "More Than a Feeling", "artist": "Boston", "genre": "Rock" },
+      { "title": "Carry On Wayward Son", "artist": "Kansas", "genre": "Rock" },
+      { "title": "Sweet Home Alabama", "artist": "Lynyrd Skynyrd", "genre": "Rock" },
+      { "title": "Brown Eyed Girl", "artist": "Van Morrison", "genre": "Rock" },
+      { "title": "Layla", "artist": "Eric Clapton", "genre": "Rock" },
+      { "title": "Piano Man", "artist": "Billy Joel", "genre": "Rock" },
+      { "title": "Tiny Dancer", "artist": "Elton John", "genre": "Rock" },
+      { "title": "Wonderwall", "artist": "Oasis", "genre": "Rock" },
+      { "title": "Black", "artist": "Pearl Jam", "genre": "Rock" },
+      { "title": "Wish You Were Here", "artist": "Pink Floyd", "genre": "Rock" },
+      { "title": "Stairway to Heaven", "artist": "Led Zeppelin", "genre": "Rock" },
+      { "title": "American Pie", "artist": "Don McLean", "genre": "Rock" }
+    ]
+  },
+  {
+    "name": "Acoustic Coffeehouse",
+    "description": "Mellow singer-songwriter favorites",
+    "songs": [
+      { "title": "Wonderwall", "artist": "Oasis", "genre": "Indie" },
+      { "title": "Hallelujah", "artist": "Leonard Cohen", "genre": "Indie" },
+      { "title": "Riptide", "artist": "Vance Joy", "genre": "Indie" },
+      { "title": "Banana Pancakes", "artist": "Jack Johnson", "genre": "Indie" },
+      { "title": "Skinny Love", "artist": "Bon Iver", "genre": "Indie" },
+      { "title": "Ho Hey", "artist": "The Lumineers", "genre": "Indie" },
+      { "title": "Iris", "artist": "Goo Goo Dolls", "genre": "Rock" },
+      { "title": "Stay With Me", "artist": "Sam Smith", "genre": "Pop" },
+      { "title": "Thinking Out Loud", "artist": "Ed Sheeran", "genre": "Pop" },
+      { "title": "Photograph", "artist": "Ed Sheeran", "genre": "Pop" },
+      { "title": "Halo", "artist": "Beyoncé", "genre": "R&B" },
+      { "title": "Hey There Delilah", "artist": "Plain White T's", "genre": "Indie" },
+      { "title": "Fast Car", "artist": "Tracy Chapman", "genre": "Indie" },
+      { "title": "Black Bird", "artist": "The Beatles", "genre": "Rock" },
+      { "title": "Landslide", "artist": "Fleetwood Mac", "genre": "Rock" },
+      { "title": "Tears in Heaven", "artist": "Eric Clapton", "genre": "Rock" }
+    ]
+  },
+  {
+    "name": "Country Bar",
+    "description": "Modern country and Nashville standards",
+    "songs": [
+      { "title": "Wagon Wheel", "artist": "Darius Rucker", "genre": "Country" },
+      { "title": "Friends in Low Places", "artist": "Garth Brooks", "genre": "Country" },
+      { "title": "Chicken Fried", "artist": "Zac Brown Band", "genre": "Country" },
+      { "title": "Tennessee Whiskey", "artist": "Chris Stapleton", "genre": "Country" },
+      { "title": "Cruise", "artist": "Florida Georgia Line", "genre": "Country" },
+      { "title": "Body Like a Back Road", "artist": "Sam Hunt", "genre": "Country" },
+      { "title": "Heads Carolina, Tails California", "artist": "Jo Dee Messina", "genre": "Country" },
+      { "title": "Before He Cheats", "artist": "Carrie Underwood", "genre": "Country" },
+      { "title": "Strawberry Wine", "artist": "Deana Carter", "genre": "Country" },
+      { "title": "Country Roads", "artist": "John Denver", "genre": "Country" },
+      { "title": "Ring of Fire", "artist": "Johnny Cash", "genre": "Country" },
+      { "title": "Folsom Prison Blues", "artist": "Johnny Cash", "genre": "Country" },
+      { "title": "Jolene", "artist": "Dolly Parton", "genre": "Country" },
+      { "title": "Old Town Road", "artist": "Lil Nas X", "genre": "Country" },
+      { "title": "The Gambler", "artist": "Kenny Rogers", "genre": "Country" }
+    ]
+  },
+  {
+    "name": "Piano Bar Standards",
+    "description": "Dueling-piano staples and request favorites",
+    "songs": [
+      { "title": "Piano Man", "artist": "Billy Joel", "genre": "Rock" },
+      { "title": "Don't Stop Believin'", "artist": "Journey", "genre": "Rock" },
+      { "title": "Bohemian Rhapsody", "artist": "Queen", "genre": "Rock" },
+      { "title": "Tiny Dancer", "artist": "Elton John", "genre": "Rock" },
+      { "title": "Crocodile Rock", "artist": "Elton John", "genre": "Rock" },
+      { "title": "Sweet Caroline", "artist": "Neil Diamond", "genre": "Pop" },
+      { "title": "Friends in Low Places", "artist": "Garth Brooks", "genre": "Country" },
+      { "title": "Living on a Prayer", "artist": "Bon Jovi", "genre": "Rock" },
+      { "title": "Margaritaville", "artist": "Jimmy Buffett", "genre": "Rock" },
+      { "title": "American Pie", "artist": "Don McLean", "genre": "Rock" },
+      { "title": "Great Balls of Fire", "artist": "Jerry Lee Lewis", "genre": "Rock" },
+      { "title": "Hey Jude", "artist": "The Beatles", "genre": "Rock" },
+      { "title": "Let It Be", "artist": "The Beatles", "genre": "Rock" },
+      { "title": "Lean on Me", "artist": "Bill Withers", "genre": "R&B" },
+      { "title": "Wonderful World", "artist": "Sam Cooke", "genre": "R&B" }
+    ]
+  },
+  {
+    "name": "Hip-Hop Throwbacks",
+    "description": "90s and 2000s hip-hop and R&B floor-fillers",
+    "songs": [
+      { "title": "In Da Club", "artist": "50 Cent", "genre": "Hip-Hop" },
+      { "title": "Hey Ya!", "artist": "OutKast", "genre": "Hip-Hop" },
+      { "title": "Crazy in Love", "artist": "Beyoncé", "genre": "R&B" },
+      { "title": "Lose Yourself", "artist": "Eminem", "genre": "Hip-Hop" },
+      { "title": "California Love", "artist": "2Pac", "genre": "Hip-Hop" },
+      { "title": "Gold Digger", "artist": "Kanye West", "genre": "Hip-Hop" },
+      { "title": "Yeah!", "artist": "Usher", "genre": "R&B" },
+      { "title": "Empire State of Mind", "artist": "Jay-Z ft. Alicia Keys", "genre": "Hip-Hop" },
+      { "title": "No Diggity", "artist": "Blackstreet", "genre": "R&B" },
+      { "title": "Juicy", "artist": "The Notorious B.I.G.", "genre": "Hip-Hop" },
+      { "title": "It Wasn't Me", "artist": "Shaggy", "genre": "R&B" },
+      { "title": "Get Low", "artist": "Lil Jon", "genre": "Hip-Hop" },
+      { "title": "Ms. Jackson", "artist": "OutKast", "genre": "Hip-Hop" },
+      { "title": "Ignition (Remix)", "artist": "R. Kelly", "genre": "R&B" }
+    ]
+  }
+]

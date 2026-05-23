@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import ImportSongsModal from './ImportSongsModal'
 
 const Spinner = () => (
   <div style={{ width: '32px', height: '32px', border: '3px solid var(--border)', borderTopColor: 'var(--neon)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
@@ -34,6 +35,7 @@ export default function Dashboard() {
   const [shoutoutCost, setShoutoutCost] = useState(10)
   const [savingPricing, setSavingPricing] = useState(false)
   const [pricingSaved, setPricingSaved] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const navigate = useNavigate()
   const wsRef = useRef(null)
   const token = localStorage.getItem('token')
@@ -335,7 +337,12 @@ export default function Dashboard() {
         {tab === 'songs' && (
           <div className="fade-up">
             <div className="card" style={{ marginBottom: '16px' }}>
-              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '14px', fontWeight: 500 }}>Add songs fans can request from your setlist</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                <p style={{ fontSize: '13px', color: 'var(--muted)', fontWeight: 500, margin: 0 }}>Add songs fans can request from your setlist</p>
+                <button onClick={() => setImportOpen(true)} className="btn-secondary" style={{ fontSize: '12px', padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                  📥 Import songs
+                </button>
+              </div>
               <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <input placeholder="Song title" value={newSong.title} onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))} style={{ flex: '2 1 160px' }} />
                 <input placeholder="Artist (optional)" value={newSong.artist} onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))} style={{ flex: '2 1 120px' }} />
@@ -454,6 +461,14 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      <ImportSongsModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        existingSongs={songs}
+        token={token}
+        onImported={() => fetchAll()}
+      />
 
       <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }'}</style>
     </div>

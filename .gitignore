@@ -5,4 +5,3 @@ client/node_modules/
 dist/
 client/dist/
 public/
-client/package-lock.json

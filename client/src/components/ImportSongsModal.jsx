@@ -1,6 +1,40 @@
 import React, { useState, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { parseSongList } from '../utils/parseSongList'
 import templates from '../data/setlistTemplates.json'
+
+class ModalErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null } }
+  static getDerivedStateFromError(err) { return { err } }
+  componentDidCatch(err, info) { console.error('ImportSongsModal crashed:', err, info) }
+  render() {
+    if (this.state.err) {
+      return (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.85)', zIndex: 2000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+        }} onClick={this.props.onClose}>
+          <div style={{
+            background: '#0f0f1a', color: '#e8e8f5', border: '1px solid rgba(255,91,91,0.4)',
+            borderRadius: '12px', padding: '24px', maxWidth: '420px', textAlign: 'center',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: '36px', marginBottom: '10px' }}>⚠️</div>
+            <p style={{ fontWeight: 700, marginBottom: '8px' }}>The import dialog hit an error</p>
+            <p style={{ fontSize: '12px', color: '#9898b0', marginBottom: '14px', wordBreak: 'break-word' }}>
+              {String(this.state.err && this.state.err.message || this.state.err)}
+            </p>
+            <button onClick={this.props.onClose} style={{
+              background: '#00ff88', color: '#000', border: 'none', borderRadius: '8px',
+              padding: '10px 20px', fontWeight: 800, cursor: 'pointer',
+            }}>Close</button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const GENRES = ['Pop', 'Rock', 'Hip-Hop', 'R&B', 'Country', 'Jazz', 'Electronic', 'Latin', 'Indie', 'Other']
 
@@ -14,7 +48,17 @@ const SOURCE_TABS = [
 const dupeKey = (title, artist) =>
   (title || '').toLowerCase().trim() + '||' + (artist || '').toLowerCase().trim()
 
-export default function ImportSongsModal({ open, onClose, existingSongs, token, onImported }) {
+export default function ImportSongsModal(props) {
+  if (!props.open) return null
+  return createPortal(
+    <ModalErrorBoundary onClose={props.onClose}>
+      <ImportSongsModalInner {...props} />
+    </ModalErrorBoundary>,
+    document.body,
+  )
+}
+
+function ImportSongsModalInner({ open, onClose, existingSongs, token, onImported }) {
   const [step, setStep] = useState(1)
   const [source, setSource] = useState('paste')
   const [pasteText, setPasteText] = useState('')

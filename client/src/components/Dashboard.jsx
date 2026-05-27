@@ -33,6 +33,9 @@ export default function Dashboard() {
   const [maxPlayNext, setMaxPlayNext] = useState(1)
   const [shoutoutCost, setShoutoutCost] = useState(10)
   const [savingPricing, setSavingPricing] = useState(false)
+    const [spotifyUrl, setSpotifyUrl] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
   const [pricingSaved, setPricingSaved] = useState(false)
   const navigate = useNavigate()
   const wsRef = useRef(null)
@@ -118,6 +121,19 @@ export default function Dashboard() {
     await fetch('/api/songs', { method: 'POST', headers, body: JSON.stringify(newSong) })
     setNewSong({ title: '', artist: '', genre: 'Other' })
     fetchAll()
+  }
+
+  const importFromSpotify = async (e) => {
+    e.preventDefault()
+    if (!spotifyUrl.trim()) return
+    setImporting(true); setImportResult(null)
+    try {
+      const res = await fetch('/api/spotify/import-playlist', { method: 'POST', headers, body: JSON.stringify({ playlistUrl: spotifyUrl }) })
+      const data = await res.json()
+      if (data.error) { setImportResult({ error: data.error }) }
+      else { setImportResult({ success: true, count: data.imported }); setSpotifyUrl(''); fetchAll() }
+    } catch (err) { setImportResult({ error: 'Network error' }) }
+    setImporting(false)
   }
 
   const toggleSong = async (song) => {
@@ -334,6 +350,14 @@ export default function Dashboard() {
 
         {tab === 'songs' && (
           <div className="fade-up">
+                        <div className="card" style={{ marginBottom: '16px', borderLeft: '3px solid #1db954' }}>
+              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '14px', fontWeight: 500 }}>Import songs from a public Spotify playlist</p>
+              <form onSubmit={importFromSpotify} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <input placeholder="Spotify playlist URL or ID" value={spotifyUrl} onChange={e => setSpotifyUrl(e.target.value)} style={{ flex: '1 1 260px' }} />
+                <button type="submit" className="btn-primary" disabled={importing} style={{ background: '#1db954', whiteSpace: 'nowrap', flexShrink: 0, padding: '11px 18px' }}>{importing ? 'Importing...' : '🎵 Import'}</button>
+              </form>
+              {importResult && <p style={{ marginTop: '10px', fontSize: '13px', color: importResult.error ? '#e53e3e' : '#1db954' }}>{importResult.error || ('✓ Imported ' + importResult.count + ' songs!')}</p>}
+            </div>
             <div className="card" style={{ marginBottom: '16px' }}>
               <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '14px', fontWeight: 500 }}>Add songs fans can request from your setlist</p>
               <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

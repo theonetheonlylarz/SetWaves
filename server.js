@@ -441,6 +441,53 @@ async function main() {
       resolve();
     });
   });
+
+// -- SPOTIFY IMPORT --
+async function getSpotifyToken() {
+  const creds = Buffer.from(process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET).toString('base64');
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Authorization': 'Basic ' + creds, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=client_credentials'
+  });
+  const data = await res.json();
+  return data.access_token;
+}
+
+app.post('/api/spotify/import-playlist', auth, async (req, res) => {
+  const { playlistUrl } = req.body;
+  if (!playlistUrl) return res.status(400).json({ error: 'Playlist URL required' });
+  if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET)
+    return res.status(400).json({ error: 'Spotify not configured' });
+  let playlistId = playlistUrl.trim();
+  const match = playlistUrl.match(/playlist\/([a-zA-Z0-9]+)/);
+  if (match) playlistId = match[1];
+  try {
+    const token = await getSpotifyToken();
+    let tracks = [];
+    let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&fields=next,items(track(name,artists(name)))`;
+    while (url) {
+      const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) return res.status(400).json({ error: 'Could not fetch playlist. Make sure it is public.' });
+      const data = await r.json();
+      tracks = tracks.concat(data.items.filter(i => i.track && i.track.name));
+      url = data.next;
+      if (tracks.length >= 200) break;
+    }
+    const count = await prisma.song.count({ where: { userId: req.userId } });
+    const songs = await Promise.all(
+      tracks.map((item, i) => prisma.song.create({
+        data: { title: item.track.name, artist: item.track.artists.map(a => a.name).join(', '), genre: 'Other', userId: req.userId, order: count + i }
+      }))
+    );
+    res.json({ imported: songs.length, songs });
+  } catch (e) {
+    console.error('Spotify import error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
   app.listen(PORT, () => console.log('Next Up running on port ' + PORT + ' - CLIENT_URL: ' + CLIENT_URL));
 }
 main().catch(console.error);

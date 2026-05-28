@@ -451,7 +451,10 @@ async function getSpotifyToken() {
     body: 'grant_type=client_credentials'
   });
   const data = await res.json();
-  return data.access_token;
+  if (!res.ok || !data.access_token) {
+throw new Error('Spotify credentials are invalid or expired. Verify SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in Railway. (' + (data.error_description || data.error || ('HTTP ' + res.status)) + ')');
+}
+return data.access_token;
 }
 
 app.post('/api/spotify/import-playlist', auth, async (req, res) => {
@@ -468,7 +471,15 @@ app.post('/api/spotify/import-playlist', auth, async (req, res) => {
     let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&fields=next,items(track(name,artists(name)))`;
     while (url) {
       const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!r.ok) return res.status(400).json({ error: 'Could not fetch playlist. Make sure it is public.' });
+      if (!r.ok) {
+const errStatus = r.status;
+const errMsg = errStatus === 403
+? 'Playlist is private — set it to Public in Spotify first.'
+: errStatus === 404
+? 'Playlist not found. Double-check the URL.'
+: 'Spotify returned ' + errStatus + ' while fetching the playlist.';
+return res.status(400).json({ error: errMsg });
+}
       const data = await r.json();
       tracks = tracks.concat(data.items.filter(i => i.track && i.track.name));
       url = data.next;

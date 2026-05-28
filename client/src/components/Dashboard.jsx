@@ -147,6 +147,20 @@ export default function Dashboard() {
     fetchAll()
   }
 
+  const reorderSong = async (songId, direction) => {
+    const idx = songs.findIndex(s => s.id === songId)
+    if (direction === 'up' && idx === 0) return
+    if (direction === 'down' && idx === songs.length - 1) return
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+    const a = songs[idx]; const b = songs[swapIdx]
+    const oA = a.order ?? idx; const oB = b.order ?? swapIdx
+    await Promise.all([
+      fetch('/api/songs/' + a.id, { method: 'PATCH', headers, body: JSON.stringify({ order: oB }) }),
+      fetch('/api/songs/' + b.id, { method: 'PATCH', headers, body: JSON.stringify({ order: oA }) })
+    ])
+    fetchAll()
+  }
+
   const saveName = async () => {
     setSaving(true)
     await fetch('/api/profile', { method: 'PUT', headers, body: JSON.stringify({ displayName }) })
@@ -381,7 +395,7 @@ export default function Dashboard() {
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>{song.active ? 'Hide' : 'Show'}</button>
+                    <button <button onClick={() => reorderSong(song.id, 'up')} disabled={songs.indexOf(song) === 0} style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: '7px', padding: '5px 8px', fontSize: '14px', cursor: 'pointer', opacity: songs.indexOf(song) === 0 ? 0.3 : 1 }}>▲</button><button onClick={() => reorderSong(song.id, 'down')} disabled={songs.indexOf(song) === songs.length - 1} style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: '7px', padding: '5px 8px', fontSize: '14px', cursor: 'pointer', opacity: songs.indexOf(song) === songs.length - 1 ? 0.3 : 1 }}>▼</button><button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>{song.active ? 'Hide' : 'Show'}</button>
                     <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>Delete</button>
                   </div>
                 </div>

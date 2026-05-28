@@ -339,7 +339,7 @@ export default function ShowPage() {
                   onMouseEnter={e => { e.currentTarget.style.borderColor='rgba(0,255,136,0.4)'; e.currentTarget.style.background='rgba(0,255,136,0.04)'; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--surface2)'; }}>
                   <div style={{ fontSize: '20px', fontWeight: 900, color: 'var(--neon)' }}>🪙 {n}</div>
-                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>${'$'}{n}.00</div>
+                  <div style={{ fontSize: '13px', color: 'var(--muted)', marginTop: '4px' }}>${n}.00</div>
                 </button>
               ))}
             </div>

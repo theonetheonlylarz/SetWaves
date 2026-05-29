@@ -117,7 +117,6 @@ app.post('/api/register', async (req, res) => {
     res.status(500).json({ error: 'Registration failed — ' + e.message });
   }
 });
-
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -294,64 +293,46 @@ app.post('/api/songs/bulk', auth, async (req, res) => {
   }
 });
 
-// Spotify client-credentials token cache (server-wide, public-data only)
-let spotifyToken = { value: null, expiresAt: 0 };
-async function getSpotifyToken() {
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  if (!clientId || !clientSecret) throw new Error('Spotify not configured on server');
-  if (spotifyToken.value && spotifyToken.expiresAt > Date.now() + 30000) return spotifyToken.value;
-  const basic = Buffer.from(clientId + ':' + clientSecret).toString('base64');
-  const resp = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: { 'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials',
-  });
-  if (!resp.ok) throw new Error('Spotify auth failed');
-  const json = await resp.json();
-  spotifyToken = { value: json.access_token, expiresAt: Date.now() + (json.expires_in * 1000) };
-  return spotifyToken.value;
-}
-
+// -- SPOTIFY IMPORT (no API credentials needed - uses public embed page) --
 app.get('/api/import/sources', auth, (req, res) => {
-  res.json({
-    spotify: !!(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET),
-  });
+  // Spotify import now uses the public embed page, no credentials needed
+  res.json({ spotify: true });
 });
 
 app.post('/api/songs/import/spotify', auth, async (req, res) => {
   const { url } = req.body || {};
-  if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET)
-    return res.status(503).json({ error: 'SPOTIFY_NOT_CONFIGURED' });
   if (!url || typeof url !== 'string') return res.status(400).json({ error: 'Spotify URL required' });
   const match = url.match(/playlist[\/:]([a-zA-Z0-9]+)/);
-  if (!match) return res.status(400).json({ error: 'That doesn\'t look like a Spotify playlist link' });
+  if (!match) return res.status(400).json({ error: "That doesn't look like a Spotify playlist link" });
   const playlistId = match[1];
   try {
-    const token = await getSpotifyToken();
-    const tracks = [];
-    let next = 'https://api.spotify.com/v1/playlists/' + playlistId + '/tracks?fields=items(track(name,artists(name))),next&limit=100';
-    while (next && tracks.length < 1000) {
-      const resp = await fetch(next, { headers: { Authorization: 'Bearer ' + token } });
-      if (resp.status === 404) return res.status(404).json({ error: 'Playlist not found or is private' });
-      if (!resp.ok) return res.status(502).json({ error: 'Spotify returned ' + resp.status });
-      const data = await resp.json();
-      for (const item of (data.items || [])) {
-        const t = item && item.track;
-        if (!t || !t.name) continue;
-        tracks.push({
-          title: t.name,
-          artist: (t.artists || []).map(a => a.name).filter(Boolean).join(', '),
-        });
+    const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+    const r = await fetch(embedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
       }
-      next = data.next;
-    }
+    });
+    if (!r.ok) return res.status(400).json({ error: `Could not reach Spotify (HTTP ${r.status}). Make sure the playlist is public.` });
+    const html = await r.text();
+    const ndMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (!ndMatch) return res.status(400).json({ error: 'Could not parse Spotify embed page. The playlist may be private.' });
+    const nextData = JSON.parse(ndMatch[1]);
+    const trackList = nextData?.props?.pageProps?.state?.data?.entity?.trackList;
+    if (!trackList || !Array.isArray(trackList) || trackList.length === 0)
+      return res.status(404).json({ error: 'No tracks found. Make sure the playlist is public and has songs.' });
+    const tracks = trackList.map(item => ({
+      title: item.title,
+      artist: item.subtitle || '',
+    }));
     res.json({ tracks });
   } catch (e) {
     console.error('Spotify import error:', e.message);
     res.status(500).json({ error: e.message || 'Spotify import failed' });
   }
 });
+
 
 app.delete('/api/songs/:id', auth, async (req, res) => {
   await prisma.song.deleteMany({ where: { id: req.params.id, userId: req.userId } });
@@ -441,7 +422,6 @@ app.put('/api/queue/:id/deny', auth, async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
 // -- SHOW (PUBLIC) --
 
 app.get('/api/show/:slug', async (req, res) => {

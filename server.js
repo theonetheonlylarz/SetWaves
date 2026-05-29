@@ -442,53 +442,34 @@ async function main() {
     });
   });
 
-// -- SPOTIFY IMPORT --
-async function getSpotifyToken() {
-  const creds = Buffer.from(process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET).toString('base64');
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: { 'Authorization': 'Basic ' + creds, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials'
-  });
-  const data = await res.json();
-  if (!res.ok || !data.access_token) {
-throw new Error('Spotify credentials are invalid or expired. Verify SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in Railway. (' + (data.error_description || data.error || ('HTTP ' + res.status)) + ')');
-}
-return data.access_token;
-}
-
+// -- SPOTIFY IMPORT (no API credentials needed - uses public embed page) --
 app.post('/api/spotify/import-playlist', auth, async (req, res) => {
   const { playlistUrl } = req.body;
   if (!playlistUrl) return res.status(400).json({ error: 'Playlist URL required' });
-  if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET)
-    return res.status(400).json({ error: 'Spotify not configured' });
-  let playlistId = playlistUrl.trim();
   const match = playlistUrl.match(/playlist\/([a-zA-Z0-9]+)/);
-  if (match) playlistId = match[1];
+  if (!match) return res.status(400).json({ error: 'Invalid Spotify playlist URL' });
+  const playlistId = match[1];
   try {
-    const token = await getSpotifyToken();
-    let tracks = [];
-    let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&fields=next,items(track(name,artists(name)))`;
-    while (url) {
-      const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!r.ok) {
-const errStatus = r.status;
-const errMsg = errStatus === 403
-? 'Playlist is private — set it to Public in Spotify first.'
-: errStatus === 404
-? 'Playlist not found. Double-check the URL.'
-: 'Spotify returned ' + errStatus + ' while fetching the playlist.';
-return res.status(400).json({ error: errMsg });
-}
-      const data = await r.json();
-      tracks = tracks.concat(data.items.filter(i => i.track && i.track.name));
-      url = data.next;
-      if (tracks.length >= 200) break;
-    }
+    const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+    const r = await fetch(embedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+      }
+    });
+    if (!r.ok) return res.status(400).json({ error: `Could not reach Spotify (HTTP ${r.status}). Make sure the playlist is public.` });
+    const html = await r.text();
+    const ndMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+    if (!ndMatch) return res.status(400).json({ error: 'Could not parse Spotify embed page. The playlist may be private.' });
+    const nextData = JSON.parse(ndMatch[1]);
+    const trackList = nextData?.props?.pageProps?.state?.data?.entity?.trackList;
+    if (!trackList || !Array.isArray(trackList) || trackList.length === 0)
+      return res.status(400).json({ error: 'No tracks found. Make sure the playlist is public and has songs.' });
     const count = await prisma.song.count({ where: { userId: req.userId } });
     const songs = await Promise.all(
-      tracks.map((item, i) => prisma.song.create({
-        data: { title: item.track.name, artist: item.track.artists.map(a => a.name).join(', '), genre: 'Other', userId: req.userId, order: count + i }
+      trackList.map((item, i) => prisma.song.create({
+        data: { title: item.title, artist: item.subtitle || '', genre: 'Other', userId: req.userId, order: count + i }
       }))
     );
     res.json({ imported: songs.length, songs });

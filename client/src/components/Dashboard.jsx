@@ -2,6 +2,15 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ImportSongsModal from './ImportSongsModal'
 import { playRequestChime, isNotifMuted, setNotifMuted } from '../utils/notificationSound'
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, TouchSensor,
+  useSensor, useSensors,
+} from '@dnd-kit/core'
+import {
+  arrayMove, SortableContext, sortableKeyboardCoordinates,
+  verticalListSortingStrategy, useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 const Spinner = () => (
   <div style={{ width: '32px', height: '32px', border: '3px solid var(--border)', borderTopColor: 'var(--neon)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
@@ -13,6 +22,48 @@ const TIER_META = {
   STANDARD:  { icon: '🎵', label: 'Standard',  color: 'var(--neon)',  bg: 'var(--neon-dim)' },
   PRIORITY:  { icon: '⚡', label: 'Move Up',    color: '#f59e0b',      bg: 'rgba(245,158,11,0.1)' },
   PLAY_NEXT: { icon: '🔥', label: 'Play Next',  color: '#ef4444',      bg: 'rgba(239,68,68,0.1)' },
+}
+
+function SortableSongRow({ song, idx, total, onToggle, onDelete, onMove }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: song.id })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : (song.active ? 1 : 0.4),
+    zIndex: isDragging ? 10 : 'auto',
+    boxShadow: isDragging ? '0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,255,136,0.35)' : undefined,
+  }
+  return (
+    <div ref={setNodeRef} style={style} className="card"
+      data-dragging={isDragging || undefined}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 12px', gap: '8px', transition: 'opacity 0.2s' }}>
+        <button {...attributes} {...listeners}
+          aria-label="Drag to reorder"
+          style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'grab', padding: '4px 6px', minHeight: 0, fontSize: '18px', lineHeight: 1, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--text-secondary)'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--muted)'}>
+          ⋮⋮
+        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
+          <button onClick={() => onMove(song.id, 'up')} disabled={idx === 0} title="Move up"
+            style={{ background: 'var(--surface2)', color: idx === 0 ? 'var(--muted)' : 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '5px', width: '24px', height: '18px', minHeight: 0, padding: 0, fontSize: '10px', fontWeight: 700, cursor: idx === 0 ? 'not-allowed' : 'pointer', opacity: idx === 0 ? 0.4 : 1, lineHeight: 1 }}>↑</button>
+          <button onClick={() => onMove(song.id, 'down')} disabled={idx === total - 1} title="Move down"
+            style={{ background: 'var(--surface2)', color: idx === total - 1 ? 'var(--muted)' : 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '5px', width: '24px', height: '18px', minHeight: 0, padding: 0, fontSize: '10px', fontWeight: 700, cursor: idx === total - 1 ? 'not-allowed' : 'pointer', opacity: idx === total - 1 ? 0.4 : 1, lineHeight: 1 }}>↓</button>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</p>
+          <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
+            {song.artist && <span>{song.artist} · </span>}
+            <span style={{ background: 'var(--surface2)', padding: '1px 7px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '11px' }}>{song.genre || 'Other'}</span>
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+          <button onClick={() => onToggle(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>{song.active ? 'Hide' : 'Show'}</button>
+          <button onClick={() => onDelete(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>Delete</button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function ShareRow({ url, displayName }) {
@@ -106,6 +157,12 @@ export default function Dashboard() {
   const prevPendingCount = useRef(null)
   const token = localStorage.getItem('token')
   const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const fetchAll = async () => {
     try {
@@ -260,6 +317,11 @@ export default function Dashboard() {
     fetchAll()
   }
 
+  const persistSongOrder = async (orderedSongs) => {
+    await fetch('/api/songs/reorder', { method: 'PUT', headers, body: JSON.stringify({ ids: orderedSongs.map(s => s.id) }) })
+    fetchAll()
+  }
+
   const moveSong = async (id, direction) => {
     const idx = songs.findIndex(s => s.id === id)
     if (idx < 0) return
@@ -268,8 +330,18 @@ export default function Dashboard() {
     const next = [...songs]
     ;[next[idx], next[target]] = [next[target], next[idx]]
     setSongs(next) // optimistic
-    await fetch('/api/songs/reorder', { method: 'PUT', headers, body: JSON.stringify({ ids: next.map(s => s.id) }) })
-    fetchAll()
+    persistSongOrder(next)
+  }
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = songs.findIndex(s => s.id === active.id)
+    const newIndex = songs.findIndex(s => s.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    const next = arrayMove(songs, oldIndex, newIndex)
+    setSongs(next) // optimistic
+    persistSongOrder(next)
   }
 
   const saveName = async () => {
@@ -805,29 +877,28 @@ export default function Dashboard() {
                 <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0, padding: '11px 18px' }}>+ Add</button>
               </form>
             </div>
+            {songs.length > 1 && (
+              <p style={{ color: 'var(--muted)', fontSize: '11px', textAlign: 'center', marginBottom: '6px', letterSpacing: '0.02em' }}>
+                <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>⋮⋮</span> Drag any song to reorder · long-press on mobile
+              </p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {songs.length === 0 && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px 0', fontSize: '14px' }}>No songs yet. Add your first one above.</p>}
-              {songs.map((song, idx) => (
-                <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s', gap: '8px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
-                    <button onClick={() => moveSong(song.id, 'up')} disabled={idx === 0} title="Move up"
-                      style={{ background: 'var(--surface2)', color: idx === 0 ? 'var(--muted)' : 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '5px', width: '26px', height: '20px', minHeight: 0, padding: 0, fontSize: '11px', fontWeight: 700, cursor: idx === 0 ? 'not-allowed' : 'pointer', opacity: idx === 0 ? 0.4 : 1, lineHeight: 1 }}>↑</button>
-                    <button onClick={() => moveSong(song.id, 'down')} disabled={idx === songs.length - 1} title="Move down"
-                      style={{ background: 'var(--surface2)', color: idx === songs.length - 1 ? 'var(--muted)' : 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '5px', width: '26px', height: '20px', minHeight: 0, padding: 0, fontSize: '11px', fontWeight: 700, cursor: idx === songs.length - 1 ? 'not-allowed' : 'pointer', opacity: idx === songs.length - 1 ? 0.4 : 1, lineHeight: 1 }}>↓</button>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</p>
-                    <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
-                      {song.artist && <span>{song.artist} · </span>}
-                      <span style={{ background: 'var(--surface2)', padding: '1px 7px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '11px' }}>{song.genre || 'Other'}</span>
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>{song.active ? 'Hide' : 'Show'}</button>
-                    <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>Delete</button>
-                  </div>
-                </div>
-              ))}
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={songs.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                  {songs.map((song, idx) => (
+                    <SortableSongRow
+                      key={song.id}
+                      song={song}
+                      idx={idx}
+                      total={songs.length}
+                      onToggle={toggleSong}
+                      onDelete={deleteSong}
+                      onMove={moveSong}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
           </div>
         )}

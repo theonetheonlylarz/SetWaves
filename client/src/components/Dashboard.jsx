@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ImportSongsModal from './ImportSongsModal'
+import { playRequestChime, isNotifMuted, setNotifMuted } from '../utils/notificationSound'
 
 const Spinner = () => (
   <div style={{ width: '32px', height: '32px', border: '3px solid var(--border)', borderTopColor: 'var(--neon)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
@@ -12,6 +13,49 @@ const TIER_META = {
   STANDARD:  { icon: '🎵', label: 'Standard',  color: 'var(--neon)',  bg: 'var(--neon-dim)' },
   PRIORITY:  { icon: '⚡', label: 'Move Up',    color: '#f59e0b',      bg: 'rgba(245,158,11,0.1)' },
   PLAY_NEXT: { icon: '🔥', label: 'Play Next',  color: '#ef4444',      bg: 'rgba(239,68,68,0.1)' },
+}
+
+function ShareRow({ url, displayName }) {
+  const [copied, setCopied] = useState(false)
+  const shareText = 'Request a song at my show on Next Up 🎵'
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+
+  const handleNativeShare = async () => {
+    try {
+      await navigator.share({ title: (displayName ? displayName + ' on Next Up' : 'Next Up'), text: shareText, url })
+    } catch {}
+  }
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {}
+  }
+  const smsUrl = 'sms:?&body=' + encodeURIComponent(shareText + ' ' + url)
+  const mailUrl = 'mailto:?subject=' + encodeURIComponent(shareText) + '&body=' + encodeURIComponent(shareText + '\n\n' + url)
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginTop: '4px' }}>
+      {canShare && (
+        <button onClick={handleNativeShare} className="btn-primary" style={{ width: 'auto', padding: '10px 20px', fontSize: '14px' }}>
+          📤 Share link
+        </button>
+      )}
+      <button onClick={handleCopy} className="btn-secondary" style={{ padding: '10px 16px', fontSize: '13px' }}>
+        {copied ? '✓ Copied!' : '📋 Copy link'}
+      </button>
+      <a href={smsUrl} className="btn-secondary" style={{ padding: '10px 16px', fontSize: '13px', textDecoration: 'none', minHeight: '44px', display: 'inline-flex', alignItems: 'center' }}>
+        💬 Text
+      </a>
+      <a href={mailUrl} className="btn-secondary" style={{ padding: '10px 16px', fontSize: '13px', textDecoration: 'none', minHeight: '44px', display: 'inline-flex', alignItems: 'center' }}>
+        ✉️ Email
+      </a>
+      <a href={url} target="_blank" rel="noreferrer" className="btn-secondary" style={{ padding: '10px 16px', fontSize: '13px', textDecoration: 'none', minHeight: '44px', display: 'inline-flex', alignItems: 'center' }}>
+        🔗 Open
+      </a>
+    </div>
+  )
 }
 
 export default function Dashboard() {
@@ -39,6 +83,7 @@ export default function Dashboard() {
   const [savingPricing, setSavingPricing] = useState(false)
   const [pricingSaved, setPricingSaved] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [notifMuted, setNotifMutedState] = useState(() => isNotifMuted())
   const [queueOpen, setQueueOpen] = useState(true)
   const [togglingQueue, setTogglingQueue] = useState(false)
   const [nowPlayingInput, setNowPlayingInput] = useState('')
@@ -58,6 +103,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const wsRef = useRef(null)
+  const prevPendingCount = useRef(null)
   const token = localStorage.getItem('token')
   const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }
 
@@ -93,7 +139,13 @@ export default function Dashboard() {
       setNowPlayingInput(profileData.nowPlaying || '')
       setQueue(Array.isArray(queueData) ? queueData : [])
       setSongs(Array.isArray(songsData) ? songsData : [])
-      setPendingQueue(Array.isArray(pendingData) ? pendingData : [])
+      const pending = Array.isArray(pendingData) ? pendingData : []
+      const newCount = pending.length
+      if (prevPendingCount.current !== null && newCount > prevPendingCount.current) {
+        playRequestChime()
+      }
+      prevPendingCount.current = newCount
+      setPendingQueue(pending)
     } catch (e) { setError(e.message) }
   }
 
@@ -205,6 +257,18 @@ export default function Dashboard() {
   const deleteSong = async (id) => {
     if (!confirm('Delete this song?')) return
     await fetch('/api/songs/' + id, { method: 'DELETE', headers })
+    fetchAll()
+  }
+
+  const moveSong = async (id, direction) => {
+    const idx = songs.findIndex(s => s.id === id)
+    if (idx < 0) return
+    const target = direction === 'up' ? idx - 1 : idx + 1
+    if (target < 0 || target >= songs.length) return
+    const next = [...songs]
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    setSongs(next) // optimistic
+    await fetch('/api/songs/reorder', { method: 'PUT', headers, body: JSON.stringify({ ids: next.map(s => s.id) }) })
     fetchAll()
   }
 
@@ -525,6 +589,41 @@ export default function Dashboard() {
           ))}
         </div>
 
+        {(() => {
+          const steps = [
+            { done: songs.length > 0, label: 'Add songs to your setlist', action: 'Import songs', go: () => { setTab('songs'); setImportOpen(true) } },
+            { done: !stripeEnabled || stripeOnboarded, label: 'Connect Stripe for payouts', action: 'Connect', go: () => setTab('settings') },
+            { done: queueOpen, label: 'Open your queue for fans', action: 'Open queue', go: () => toggleQueue() },
+          ]
+          const remaining = steps.filter(s => !s.done)
+          if (remaining.length === 0) return null
+          return (
+            <div className="card fade-up" style={{ marginBottom: '20px', borderColor: 'rgba(0,255,136,0.2)', background: 'linear-gradient(135deg, rgba(0,255,136,0.05) 0%, rgba(0,255,136,0.01) 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text)' }}>🚀 Finish setup ({steps.length - remaining.length}/{steps.length})</h3>
+                <p style={{ fontSize: '11px', color: 'var(--muted)' }}>{remaining.length} step{remaining.length === 1 ? '' : 's'} left</p>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {steps.map((step, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '8px 12px', background: step.done ? 'rgba(0,255,136,0.04)' : 'var(--surface2)', border: '1px solid ' + (step.done ? 'rgba(0,255,136,0.18)' : 'var(--border)'), borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: step.done ? 'var(--neon)' : 'transparent', border: '1.5px solid ' + (step.done ? 'var(--neon)' : 'var(--border)'), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '11px', color: '#000', fontWeight: 900 }}>
+                        {step.done ? '✓' : ''}
+                      </div>
+                      <span style={{ fontSize: '13px', color: step.done ? 'var(--muted)' : 'var(--text)', textDecoration: step.done ? 'line-through' : 'none', fontWeight: 600 }}>{step.label}</span>
+                    </div>
+                    {!step.done && (
+                      <button onClick={step.go} style={{ background: 'var(--neon-dim)', color: 'var(--neon)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {step.action} →
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {tab === 'inbox' && (
           <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {pendingQueue.length === 0 ? (
@@ -708,10 +807,16 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {songs.length === 0 && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px 0', fontSize: '14px' }}>No songs yet. Add your first one above.</p>}
-              {songs.map(song => (
-                <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s' }}>
-                  <div>
-                    <p style={{ fontWeight: 600, fontSize: '14px' }}>{song.title}</p>
+              {songs.map((song, idx) => (
+                <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s', gap: '8px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0 }}>
+                    <button onClick={() => moveSong(song.id, 'up')} disabled={idx === 0} title="Move up"
+                      style={{ background: 'var(--surface2)', color: idx === 0 ? 'var(--muted)' : 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '5px', width: '26px', height: '20px', minHeight: 0, padding: 0, fontSize: '11px', fontWeight: 700, cursor: idx === 0 ? 'not-allowed' : 'pointer', opacity: idx === 0 ? 0.4 : 1, lineHeight: 1 }}>↑</button>
+                    <button onClick={() => moveSong(song.id, 'down')} disabled={idx === songs.length - 1} title="Move down"
+                      style={{ background: 'var(--surface2)', color: idx === songs.length - 1 ? 'var(--muted)' : 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: '5px', width: '26px', height: '20px', minHeight: 0, padding: 0, fontSize: '11px', fontWeight: 700, cursor: idx === songs.length - 1 ? 'not-allowed' : 'pointer', opacity: idx === songs.length - 1 ? 0.4 : 1, lineHeight: 1 }}>↓</button>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</p>
                     <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
                       {song.artist && <span>{song.artist} · </span>}
                       <span style={{ background: 'var(--surface2)', padding: '1px 7px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '11px' }}>{song.genre || 'Other'}</span>
@@ -737,9 +842,7 @@ export default function Dashboard() {
                     <img src={qr.qrCode} alt="QR Code" style={{ width: '220px', height: '220px', display: 'block' }} />
                   </div>
                   <p className="qr-url-display" style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '20px', fontFamily: 'monospace', background: 'var(--surface2)', display: 'block', padding: '6px 14px', borderRadius: '6px', border: '1px solid var(--border)', overflowWrap: 'break-word', wordBreak: 'break-all' }}>{qr.url}</p>
-                  <div style={{ marginTop: '4px' }}>
-                    <a href={qr.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>Open Fan Page</a>
-                  </div>
+                  <ShareRow url={qr.url} displayName={profile.displayName} />
                 </>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
@@ -759,6 +862,27 @@ export default function Dashboard() {
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input value={displayName} onChange={e => setDisplayName(e.target.value)} onFocus={() => setEditingName(true)} placeholder="Your stage name" />
                 {editingName && <button onClick={saveName} className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>}
+              </div>
+            </div>
+
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>{notifMuted ? '🔕' : '🔔'} Request Sounds</h3>
+                  <p style={{ color: 'var(--muted)', fontSize: '13px' }}>{notifMuted ? 'Silent. Turn on so you don\'t miss requests while playing.' : 'Plays a short chime when a new song request arrives.'}</p>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button onClick={() => playRequestChime()} className="btn-secondary" style={{ fontSize: '12px', padding: '7px 12px', whiteSpace: 'nowrap' }}>
+                    Test
+                  </button>
+                  <button onClick={() => { const next = !notifMuted; setNotifMuted(next); setNotifMutedState(next) }}
+                    className="btn-secondary" style={{ fontSize: '12px', padding: '7px 14px', whiteSpace: 'nowrap',
+                    background: notifMuted ? 'var(--surface2)' : 'rgba(0,255,136,0.1)',
+                    color: notifMuted ? 'var(--muted)' : 'var(--neon)',
+                    borderColor: notifMuted ? 'var(--border)' : 'rgba(0,255,136,0.3)' }}>
+                    {notifMuted ? 'Unmute' : 'Mute'}
+                  </button>
+                </div>
               </div>
             </div>
 

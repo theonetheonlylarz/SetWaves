@@ -348,6 +348,22 @@ app.patch('/api/songs/:id', auth, async (req, res) => {
   res.json({ success: true });
 });
 
+app.put('/api/songs/reorder', auth, async (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+  try {
+    await prisma.$transaction(
+      ids.map((id, index) =>
+        prisma.song.updateMany({ where: { id, userId: req.userId }, data: { order: index } })
+      )
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error('Reorder error:', e.message);
+    res.status(500).json({ error: 'Failed to reorder' });
+  }
+});
+
 // -- QUEUE --
 
 app.get('/api/queue', auth, async (req, res) => {

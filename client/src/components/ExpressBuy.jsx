@@ -27,7 +27,15 @@ function ExpressForm({ slug, coins, onSuccess, onError }) {
 
   const handleConfirm = async (event) => {
     try {
-      // Create the PaymentIntent now that we know an express method was tapped
+      // 1. Run form validation / trigger the merchant session
+      const { error: submitError } = await elements.submit()
+      if (submitError) {
+        console.error('elements.submit error:', submitError)
+        onError && onError(submitError.message || 'Could not start payment')
+        return
+      }
+
+      // 2. Create the PaymentIntent now that the express method is confirmed
       const res = await fetch('/api/stripe/payment-intent/' + slug, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -35,10 +43,14 @@ function ExpressForm({ slug, coins, onSuccess, onError }) {
       })
       const data = await res.json()
       if (!res.ok || !data.clientSecret) {
+        console.error('PaymentIntent create failed:', data)
         onError && onError(data.error || 'Could not start payment')
         return
       }
+
+      // 3. Confirm the payment with the elements + clientSecret
       const { error: confirmError } = await stripe.confirmPayment({
+        elements,
         clientSecret: data.clientSecret,
         confirmParams: {
           return_url: window.location.origin + '/show/' + slug,
@@ -46,10 +58,12 @@ function ExpressForm({ slug, coins, onSuccess, onError }) {
         redirect: 'if_required',
       })
       if (confirmError) {
+        console.error('confirmPayment error:', confirmError)
         onError && onError(confirmError.message || 'Payment failed')
         return
       }
-      // Verify + grant coins immediately (don't wait for webhook)
+
+      // 4. Verify + grant coins immediately (don't wait for webhook)
       const verifyRes = await fetch('/api/stripe/verify-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,11 +71,13 @@ function ExpressForm({ slug, coins, onSuccess, onError }) {
       })
       const verifyData = await verifyRes.json()
       if (!verifyRes.ok) {
+        console.error('verify-payment failed:', verifyData)
         onError && onError(verifyData.error || 'Could not verify payment')
         return
       }
       onSuccess && onSuccess({ coins: verifyData.tokens, sessionId: verifyData.sessionId })
     } catch (e) {
+      console.error('handleConfirm threw:', e)
       onError && onError(e.message || 'Payment failed')
     }
   }

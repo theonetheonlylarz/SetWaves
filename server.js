@@ -49,20 +49,6 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
       } catch (e) { console.error('Coin grant error:', e.message); }
     }
   }
-  if (event.type === 'payment_intent.succeeded') {
-    const intent = event.data.object;
-    const { slug, coins } = intent.metadata || {};
-    if (slug && coins) {
-      try {
-        await prisma.tokenGrant.upsert({
-          where: { stripeSessionId: 'pi_' + intent.id },
-          update: {},
-          create: { stripeSessionId: 'pi_' + intent.id, tokens: parseInt(coins, 10), slug },
-        });
-        console.log('Coin grant (Apple/Google Pay): ' + coins + ' coins for show ' + slug);
-      } catch (e) { console.error('PI grant error:', e.message); }
-    }
-  }
   if (event.type === 'account.updated') {
     const account = event.data.object;
     if (account.charges_enabled && account.details_submitted) {
@@ -788,63 +774,6 @@ app.post('/api/stripe/checkout/:slug', async (req, res) => {
     const session = await stripeInstance.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Public Stripe config (publishable key) - safe to expose
-app.get('/api/stripe/public-config', (req, res) => {
-  res.json({ publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || null });
-});
-
-// Create a PaymentIntent for Apple Pay / Google Pay / Link / Card on the show page
-app.post('/api/stripe/payment-intent/:slug', async (req, res) => {
-  if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
-  const coins = parseInt(req.body.coins, 10);
-  if (isNaN(coins) || coins < 1 || coins > 999) return res.status(400).json({ error: 'Coin amount must be 1-999' });
-  const user = await prisma.user.findUnique({ where: { slug: req.params.slug } });
-  if (!user) return res.status(404).json({ error: 'Performer not found' });
-  const amountCents = coins * 100;
-  try {
-    const params = {
-      amount: amountCents,
-      currency: 'usd',
-      automatic_payment_methods: { enabled: true },
-      metadata: { slug: user.slug, coins: String(coins) },
-      description: coins + ' Coin' + (coins !== 1 ? 's' : '') + ' for ' + (user.displayName || 'Next Up'),
-    };
-    if (user.stripeAccountId && user.stripeOnboarded) {
-      params.application_fee_amount = Math.round(amountCents * 0.10);
-      params.transfer_data = { destination: user.stripeAccountId };
-    }
-    const intent = await stripeInstance.paymentIntents.create(params);
-    res.json({ clientSecret: intent.client_secret, paymentIntentId: intent.id, amount: amountCents });
-  } catch (e) {
-    console.error('PaymentIntent create error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// After Apple Pay confirms, verify the PaymentIntent and grant coins immediately.
-// This is also handled by the webhook, but doing it here makes the UX instant.
-app.post('/api/stripe/verify-payment', async (req, res) => {
-  if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
-  const { paymentIntentId } = req.body || {};
-  if (!paymentIntentId) return res.status(400).json({ error: 'paymentIntentId required' });
-  try {
-    const intent = await stripeInstance.paymentIntents.retrieve(paymentIntentId);
-    if (intent.status !== 'succeeded') return res.status(400).json({ error: 'Payment not completed', status: intent.status });
-    const { slug, coins } = intent.metadata || {};
-    if (!slug || !coins) return res.status(400).json({ error: 'Missing metadata on PaymentIntent' });
-    const grantKey = 'pi_' + intent.id;
-    const grant = await prisma.tokenGrant.upsert({
-      where: { stripeSessionId: grantKey },
-      update: {},
-      create: { stripeSessionId: grantKey, tokens: parseInt(coins, 10), slug },
-    });
-    res.json({ tokens: grant.tokens, slug: grant.slug, sessionId: grantKey });
-  } catch (e) {
-    console.error('verify-payment error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
 });
 
 app.get('/api/tokens/redeem/:sessionId', async (req, res) => {

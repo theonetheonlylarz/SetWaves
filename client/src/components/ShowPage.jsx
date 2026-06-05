@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import ExpressBuy from './ExpressBuy'
 
 const Spinner = () => (
   <div style={{ width: '32px', height: '32px', border: '3px solid var(--border)', borderTopColor: 'var(--neon)', borderRadius: '50%', animation: 'spin 0.75s linear infinite' }} />
@@ -74,7 +73,6 @@ export default function ShowPage() {
   const [sendingTip, setSendingTip] = useState(false)
   const [tipSuccess, setTipSuccess] = useState(false)
   const [packages, setPackages] = useState([])
-  const [stripePublishableKey, setStripePublishableKey] = useState(null)
   const [voteResults, setVoteResults] = useState([])
   const [myVote, setMyVote] = useState(() => { try { return localStorage.getItem('nextup_vote_' + slug) || null } catch { return null } })
   const [castingVote, setCastingVote] = useState(null)
@@ -122,12 +120,6 @@ export default function ShowPage() {
     try { const res = await fetch('/api/votes/' + slug); if (res.ok) { const d = await res.json(); setVoteResults(d.votes || []) } } catch {}
   }
   useEffect(() => { fetchShow(); fetchVotes() }, [slug])
-  useEffect(() => {
-    fetch('/api/stripe/public-config')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d && d.publishableKey) setStripePublishableKey(d.publishableKey) })
-      .catch(() => {})
-  }, [])
 
   useEffect(() => {
     const grantId = params.get('grant')
@@ -509,29 +501,6 @@ export default function ShowPage() {
               </div>
               <button onClick={() => { setBuyMode(false); setError('') }} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '22px', cursor: 'pointer', lineHeight: 1, padding: '4px 8px' }}>×</button>
             </div>
-            {stripePublishableKey && (
-              <ExpressBuy
-                slug={slug}
-                publishableKey={stripePublishableKey}
-                onSuccess={async ({ coins: granted, sessionId }) => {
-                  try {
-                    const headers = {}
-                    if (fanToken) headers['Authorization'] = 'Bearer ' + fanToken
-                    const r = await fetch('/api/tokens/redeem/' + sessionId, { headers })
-                    const d = await r.json()
-                    if (r.ok) {
-                      if (fanToken && d.fanBalance !== null && d.fanBalance !== undefined) setFanBalance(d.fanBalance)
-                      else updateCoins(c => c + (d.tokens || granted))
-                      setBuyMode(false)
-                      setError('')
-                    } else { updateCoins(c => c + granted); setBuyMode(false) }
-                  } catch {
-                    updateCoins(c => c + granted); setBuyMode(false)
-                  }
-                }}
-                onError={(msg) => setError(msg)}
-              />
-            )}
             <div className="sp-coin-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', width: '100%', boxSizing: 'border-box', padding: '0', margin: '12px 0' }}>
               {(packages.length > 0 ? packages : [
                 { id: 'single', name: 'Single', coins: 1, price: 1, emoji: '🎵', description: 'One request' },

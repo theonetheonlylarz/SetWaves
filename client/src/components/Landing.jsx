@@ -204,11 +204,18 @@ export default function Landing() {
       {/* Footer */}
       <footer style={{
         borderTop: '1px solid rgba(255,255,255,0.05)',
-        padding: '24px 20px', textAlign: 'center',
+        padding: '24px 20px',
       }}>
-        <p style={{ fontSize: '12px', color: '#56566e' }}>
-          © {new Date().getFullYear()} Next Up · Built for live performers
-        </p>
+        <div style={{ maxWidth: '1080px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'center', justifyContent: 'space-between' }}>
+          <p style={{ fontSize: '12px', color: '#56566e' }}>
+            © {new Date().getFullYear()} Next Up · Built for live performers
+          </p>
+          <div style={{ display: 'flex', gap: '18px', fontSize: '12px' }}>
+            <Link to="/login" style={{ color: '#9898b0', textDecoration: 'none' }}>Sign in</Link>
+            <Link to="/signup" style={{ color: '#9898b0', textDecoration: 'none' }}>Create account</Link>
+            <a href="mailto:larzgh44@gmail.com?subject=Next Up" style={{ color: '#9898b0', textDecoration: 'none' }}>Contact</a>
+          </div>
+        </div>
       </footer>
     </div>
   )

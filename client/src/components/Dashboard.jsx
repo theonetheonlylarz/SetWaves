@@ -1072,6 +1072,10 @@ export default function Dashboard() {
                 <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer" style={{ flexShrink: 0, padding: '10px 14px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Open</a>
               </div>
             </div>
+
+            <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>
+              Need help? <a href="mailto:larzgh44@gmail.com?subject=Next Up" style={{ color: 'var(--neon)' }}>Email support</a>
+            </p>
           </div>
         )}
       </main>

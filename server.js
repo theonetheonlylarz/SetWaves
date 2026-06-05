@@ -132,10 +132,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-app.post('/api/forgot-password', async (req, res) => {
-  if (!req.body.email) return res.status(400).json({ error: 'Email required' });
-  res.json({ message: 'If that email is registered, a reset link has been sent.' });
-});
 // -- FAN AUTH --
 
 app.post('/api/fan/register', async (req, res) => {

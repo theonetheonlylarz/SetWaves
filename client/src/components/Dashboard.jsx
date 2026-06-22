@@ -37,6 +37,8 @@ export default function Dashboard() {
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
   const [pricingSaved, setPricingSaved] = useState(false)
+  const [stripeConnecting, setStripeConnecting] = useState(false)
+  const [stripeMsg, setStripeMsg] = useState('')
   const navigate = useNavigate()
   const wsRef = useRef(null)
   const token = localStorage.getItem('token')
@@ -81,6 +83,15 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('stripe') === 'success') {
+      setStripeMsg('✅ Stripe connected! You can now accept payments.')
+      window.history.replaceState({}, '', '/dashboard')
+      fetchAll()
+    } else if (params.get('stripe') === 'refresh') {
+      setStripeMsg('⚠️ Stripe setup was interrupted. Please try connecting again.')
+      window.history.replaceState({}, '', '/dashboard')
+    }
     fetchAll()
     fetch('/api/qrcode', { headers }).then(r => r.json()).then(d => setQr(d))
     fetchShoutouts()
@@ -103,6 +114,17 @@ export default function Dashboard() {
   }, [profile?.id])
 
   const logout = () => { localStorage.clear(); navigate('/login') }
+
+  const connectStripe = async () => {
+    setStripeConnecting(true)
+    try {
+      const res = await fetch('/api/stripe/connect', { method: 'POST', headers })
+      const data = await res.json()
+      if (data.url) { window.location.href = data.url }
+      else { setStripeMsg('Error: ' + (data.error || 'Could not start Stripe setup')) }
+    } catch (e) { setStripeMsg('Network error. Please try again.') }
+    setStripeConnecting(false)
+  }
 
   const markPlayed = async (id) => {
     await fetch('/api/queue/' + id + '/played', { method: 'PUT', headers })
@@ -265,6 +287,24 @@ export default function Dashboard() {
       <main style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 20px' }}>
         {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
 
+        {stripeMsg && (
+          <div style={{ marginBottom: '16px', padding: '12px 16px', borderRadius: '10px', background: stripeMsg.startsWith('✅') ? 'rgba(0,255,136,0.08)' : 'rgba(245,158,11,0.08)', border: '1px solid ' + (stripeMsg.startsWith('✅') ? 'rgba(0,255,136,0.3)' : 'rgba(245,158,11,0.3)'), color: stripeMsg.startsWith('✅') ? 'var(--neon)' : '#f59e0b', fontSize: '14px', fontWeight: 600 }}>
+            {stripeMsg}
+          </div>
+        )}
+
+        {!profile.stripeOnboarded && (
+          <div style={{ marginBottom: '20px', padding: '16px 20px', borderRadius: '12px', background: 'rgba(239,68,68,0.06)', border: '2px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+            <div>
+              <p style={{ fontWeight: 700, fontSize: '15px', color: '#ef4444', marginBottom: '4px' }}>⚠️ Connect Stripe to accept payments</p>
+              <p style={{ fontSize: '13px', color: 'var(--muted)' }}>Fans can't buy coins until you connect. Takes 2 minutes — you keep 90% of every transaction.</p>
+            </div>
+            <button onClick={connectStripe} disabled={stripeConnecting} style={{ background: '#635bff', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 20px', fontSize: '14px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, opacity: stripeConnecting ? 0.7 : 1 }}>
+              {stripeConnecting ? 'Redirecting...' : 'Connect Stripe →'}
+            </button>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: '2px', marginBottom: '24px', background: 'var(--surface)', padding: '3px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flexWrap: 'wrap' }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
@@ -406,7 +446,17 @@ export default function Dashboard() {
 
         {tab === 'qr' && (
           <div className="fade-up">
-            <div className="card" style={{ textAlign: 'center', padding: '48px 32px' }}>
+            {!profile.stripeOnboarded && (
+              <div style={{ textAlign: 'center', padding: '48px 32px', background: 'rgba(239,68,68,0.04)', borderRadius: '16px', border: '2px dashed rgba(239,68,68,0.3)' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔒</div>
+                <p style={{ fontWeight: 700, fontSize: '17px', color: '#ef4444', marginBottom: '8px' }}>Connect Stripe first</p>
+                <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '20px' }}>Your QR code will be ready once you connect your Stripe account. Fans need to be able to pay before they scan.</p>
+                <button onClick={connectStripe} disabled={stripeConnecting} style={{ background: '#635bff', color: '#fff', border: 'none', borderRadius: '8px', padding: '11px 24px', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+                  {stripeConnecting ? 'Redirecting...' : 'Connect Stripe →'}
+                </button>
+              </div>
+            )}
+            {profile.stripeOnboarded && <div className="card" style={{ textAlign: 'center', padding: '48px 32px' }}>
               {qr ? (
                 <>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '15px', fontWeight: 500, marginBottom: '28px' }}>Display at your show — fans scan to request songs</p>
@@ -424,7 +474,7 @@ export default function Dashboard() {
                   <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Generating QR code...</p>
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         )}
 
@@ -477,6 +527,25 @@ export default function Dashboard() {
                   </button>
                 </div>
               </div>
+            </div>
+
+            <div className="card" style={{ borderLeft: profile.stripeOnboarded ? '3px solid var(--neon)' : '3px solid #635bff' }}>
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Stripe Payouts {profile.stripeOnboarded ? '✅' : '⚠️'}</h3>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '14px' }}>
+                {profile.stripeOnboarded
+                  ? 'Connected — you receive 90% of every coin purchase. Payouts go directly to your bank.'
+                  : 'Not connected — fans cannot buy coins until you set this up.'}
+              </p>
+              {!profile.stripeOnboarded && (
+                <button onClick={connectStripe} disabled={stripeConnecting} style={{ background: '#635bff', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 20px', fontSize: '14px', fontWeight: 700, cursor: 'pointer', opacity: stripeConnecting ? 0.7 : 1 }}>
+                  {stripeConnecting ? 'Redirecting...' : 'Connect Stripe →'}
+                </button>
+              )}
+              {profile.stripeOnboarded && (
+                <button onClick={connectStripe} disabled={stripeConnecting} style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', cursor: 'pointer' }}>
+                  {stripeConnecting ? 'Redirecting...' : 'Update payout details'}
+                </button>
+              )}
             </div>
 
             <div className="card">

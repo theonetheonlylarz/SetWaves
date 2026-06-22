@@ -52,6 +52,33 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
   res.json({ received: true });
 });
 
+// Stripe account.updated — fires when a performer finishes Stripe Connect onboarding
+app.post('/api/stripe/webhook-connect', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripeInstance) return res.status(400).json({ error: 'Stripe not configured' });
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) return res.status(400).send('Webhook secret not configured');
+  let event;
+  try {
+    event = stripeInstance.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    return res.status(400).send('Webhook Error: ' + err.message);
+  }
+  if (event.type === 'account.updated') {
+    const account = event.data.object;
+    if (account.details_submitted && account.charges_enabled) {
+      try {
+        await prisma.user.updateMany({
+          where: { stripeAccountId: account.id },
+          data: { stripeOnboarded: true }
+        });
+        console.log('Stripe onboarding complete for account:', account.id);
+      } catch (e) { console.error('Onboarding update error:', e.message); }
+    }
+  }
+  res.json({ received: true });
+});
+
 app.use(cors());
 app.use(express.json());
 
@@ -375,6 +402,13 @@ app.post('/api/stripe/checkout/:slug', async (req, res) => {
   if (!user) return res.status(404).json({ error: 'Performer not found' });
   const amountCents = coins * 100;
   try {
+    // Block checkout if performer hasn't connected Stripe — prevents money going nowhere
+    if (!user.stripeAccountId || !user.stripeOnboarded) {
+      return res.status(402).json({
+        error: "This performer hasn't set up payouts yet. They need to connect their Stripe account in their dashboard first.",
+        requiresStripeSetup: true
+      });
+    }
     const sessionParams = {
       payment_method_types: ['card'],
       line_items: [{ price_data: { currency: 'usd', product_data: { name: coins + ' Coin' + (coins !== 1 ? 's' : '') + ' - Next Up' }, unit_amount: amountCents }, quantity: 1 }],
@@ -382,10 +416,9 @@ app.post('/api/stripe/checkout/:slug', async (req, res) => {
       success_url: CLIENT_URL + '/show/' + user.slug + '?grant={CHECKOUT_SESSION_ID}',
       cancel_url: CLIENT_URL + '/show/' + user.slug,
     };
-    if (user.stripeOnboarded && user.stripeAccountId) {
-      sessionParams.application_fee_amount = Math.floor(amountCents * 0.10);
-      sessionParams.transfer_data = { destination: user.stripeAccountId };
-    }
+    // Always 90/10 split — performer is guaranteed onboarded at this point
+    sessionParams.application_fee_amount = Math.floor(amountCents * 0.10);
+    sessionParams.transfer_data = { destination: user.stripeAccountId };
     const session = await stripeInstance.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e) { res.status(500).json({ error: e.message }); }

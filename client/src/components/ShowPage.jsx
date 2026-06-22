@@ -176,8 +176,9 @@ export default function ShowPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coins: n })
       })
       const data = await res.json()
-      if (data.url) window.location.href = data.url
-      else setError(data.error || 'Checkout unavailable right now')
+      if (data.url) { window.location.href = data.url }
+      else if (data.requiresStripeSetup) { setError("This performer hasn't set up payouts yet — coins aren't available for this show.") }
+      else { setError(data.error || 'Checkout unavailable right now') }
     } catch { setError('Network error') }
     finally { setBuying(false) }
   }

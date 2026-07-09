@@ -75,6 +75,8 @@ export default function ShowPage() {
   const [myVote, setMyVote] = useState(() => { try { return localStorage.getItem('nextup_vote_' + slug) || null } catch { return null } })
   const [castingVote, setCastingVote] = useState(null)
   const [requestOpen, setRequestOpen] = useState(false)
+  const [requestNotif, setRequestNotif] = useState(null)
+  const [myRequests, setMyRequests] = useState([])
   const [voterKey] = useState(() => {
     const k = 'nextup_vk_' + slug
     try { let v = localStorage.getItem(k); if (!v) { v = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem(k, v) } return v }
@@ -167,32 +169,56 @@ export default function ShowPage() {
 
   useEffect(() => {
     if (!slug) return
-    const wsBase = window.location.origin.replace(/^http/, 'ws')
-    wsRef.current = new WebSocket(wsBase + '/ws/' + slug)
-    wsRef.current.onerror = () => {}
-    wsRef.current.onmessage = (evt) => {
-      try {
-        const msg = JSON.parse(evt.data)
-        if (msg.type === 'QUEUE_UPDATE' || !msg.type) { fetchShow(); refreshFanBalance() }
-        if (msg.type === 'SHOW_STATUS' || msg.type === 'NOW_PLAYING') fetchShow()
-        if (msg.type === 'VOTE_UPDATE') fetchVotes()
-      } catch { fetchShow() }
+    let ws, reconnectTimer, dead = false
+    const connect = () => {
+      if (dead) return
+      const wsBase = window.location.origin.replace(/^http/, 'ws')
+      ws = new WebSocket(wsBase + '/ws/' + slug)
+      wsRef.current = ws
+      ws.onerror = () => {}
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data)
+          if (msg.type === 'QUEUE_UPDATE' || !msg.type) { fetchShow(); refreshFanBalance() }
+          if (msg.type === 'SHOW_STATUS' || msg.type === 'NOW_PLAYING') fetchShow()
+          if (msg.type === 'VOTE_UPDATE') fetchVotes()
+          if (msg.type === 'REQUEST_STATUS') {
+            setMyRequests(prev => {
+              const match = prev.find(r => r.songTitle === msg.songTitle)
+              if (!match) return prev
+              setRequestNotif({ songTitle: msg.songTitle, status: msg.status })
+              setTimeout(() => setRequestNotif(null), 6000)
+              if (msg.status === 'ACCEPTED') refreshFanBalance()
+              return prev.filter(r => r.songTitle !== msg.songTitle)
+            })
+          }
+        } catch { fetchShow() }
+      }
+      ws.onclose = () => { if (!dead) reconnectTimer = setTimeout(connect, 3000) }
     }
-    return () => wsRef.current?.close()
+    connect()
+    return () => { dead = true; clearTimeout(reconnectTimer); ws?.close() }
   }, [slug])
 
   const handleFanAuth = async (e) => {
     e.preventDefault(); setAuthLoading(true); setAuthError('')
     try {
       const endpoint = authMode === 'signup' ? '/api/fan/register' : '/api/fan/login'
+      const body = authMode === 'signup'
+        ? { email: authEmail, password: authPassword, displayName: authDisplayName.trim() }
+        : { email: authEmail, password: authPassword }
       const res = await fetch(endpoint, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: authEmail, password: authPassword }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Auth failed')
       localStorage.setItem(FAN_TOKEN_KEY, data.token)
-      if (authMode === 'signup' && authDisplayName.trim()) {
+      const serverDisplayName = data.fan.displayName || ''
+      if (serverDisplayName) {
+        localStorage.setItem('nextup_fan_name', serverDisplayName)
+        setFanDisplayName(serverDisplayName)
+      } else if (authMode === 'signup' && authDisplayName.trim()) {
         localStorage.setItem('nextup_fan_name', authDisplayName.trim())
         setFanDisplayName(authDisplayName.trim())
       }
@@ -261,6 +287,7 @@ export default function ShowPage() {
       if (!res.ok) throw new Error(data.error)
       if (tier === 'PRIORITY') { const next = jumpsUsed + 1; setJumpsUsed(next); try { localStorage.setItem('nextup_jumps_' + slug, String(next)) } catch {} }
       if (tier === 'PLAY_NEXT') { const next = playNextUsed + 1; setPlayNextUsed(next); try { localStorage.setItem('nextup_playnext_' + slug, String(next)) } catch {} }
+      setMyRequests(prev => [...prev, { songTitle: title, tier, submittedAt: new Date() }])
       setSelectedSong(''); setCustomSong(''); setDedication('')
       setRequestOpen(false)
       setSuccess(true); setTimeout(() => setSuccess(false), 5000)
@@ -384,11 +411,14 @@ export default function ShowPage() {
                 {authLoading ? '...' : authMode === 'login' ? 'Sign in' : 'Create account'}
               </button>
             </form>
-            <div style={{ textAlign: 'center', marginTop: '16px' }}>
+            <div style={{ textAlign: 'center', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button onClick={() => { setAuthMode(m => m === 'login' ? 'signup' : 'login'); setAuthError('') }}
                 style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '13px', cursor: 'pointer', padding: 0 }}>
                 {authMode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
               </button>
+              {authMode === 'login' && (
+                <a href={'/fan-forgot-password'} style={{ color: 'var(--muted)', fontSize: '12px', textDecoration: 'none' }}>Forgot password?</a>
+              )}
             </div>
           </div>
         </div>
@@ -444,6 +474,16 @@ export default function ShowPage() {
       </div>
       <div style={{ maxWidth: '540px', margin: '0 auto', padding: '28px 20px 60px' }}>
         {redeeming && (<div style={{ background: 'rgba(0,255,136,0.04)', border: '1.5px solid rgba(0,255,136,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '14px', textAlign: 'center' }}><p style={{ color: 'var(--neon)', fontWeight: 600, fontSize: '14px' }}>⏳ Confirming your payment...</p></div>)}
+        {requestNotif && (
+          <div style={{ background: requestNotif.status === 'ACCEPTED' ? 'rgba(0,255,136,0.08)' : 'rgba(255,91,91,0.08)', border: '1.5px solid ' + (requestNotif.status === 'ACCEPTED' ? 'rgba(0,255,136,0.3)' : 'rgba(255,91,91,0.3)'), borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}>
+            <p style={{ color: requestNotif.status === 'ACCEPTED' ? 'var(--neon)' : 'var(--red)', fontWeight: 700, fontSize: '16px' }}>
+              {requestNotif.status === 'ACCEPTED' ? '✅ Request accepted!' : '❌ Request denied'}
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>
+              {requestNotif.status === 'ACCEPTED' ? '"' + requestNotif.songTitle + '" is in the queue — coins deducted.' : '"' + requestNotif.songTitle + '" was not added. Your coins were not charged.'}
+            </p>
+          </div>
+        )}
         {success && (<div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '16px' }}>🎵 Request submitted!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>Awaiting the performer's approval — coins charged on acceptance.</p></div>)}
         {shoutoutSuccess && (<div style={{ background: 'rgba(139,92,246,0.08)', border: '1.5px solid rgba(139,92,246,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: '#a78bfa', fontWeight: 700, fontSize: '16px' }}>📣 Shoutout sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>The performer will see your message!</p></div>)}
         {tipSuccess && (<div style={{ background: 'rgba(234,179,8,0.08)', border: '1.5px solid rgba(234,179,8,0.3)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '16px', textAlign: 'center', animation: 'fadeUp 0.3s ease' }}><p style={{ color: '#eab308', fontWeight: 700, fontSize: '16px' }}>💰 Tip sent!</p><p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '3px' }}>Thanks for supporting the performer!</p></div>)}
@@ -765,6 +805,26 @@ export default function ShowPage() {
             </div>
           )}
         </div>
+
+        {myRequests.length > 0 && (
+          <div style={{ marginTop: '4px', marginBottom: '24px' }}>
+            <h2 style={{ fontWeight: 800, fontSize: '15px', color: 'var(--muted)', marginBottom: '10px' }}>📋 Your Requests This Session</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {myRequests.map((r, i) => {
+                const TIER_COLOR = { STANDARD: 'var(--neon)', PRIORITY: '#f59e0b', PLAY_NEXT: '#ef4444' }
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 14px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+                    <span style={{ color: TIER_COLOR[r.tier] || 'var(--neon)', fontSize: '14px' }}>
+                      {r.tier === 'PLAY_NEXT' ? '🔥' : r.tier === 'PRIORITY' ? '⚡' : '🎵'}
+                    </span>
+                    <span style={{ fontWeight: 600, fontSize: '14px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.songTitle}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600 }}>Pending approval</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
       <style>{'@keyframes spin { to { transform: rotate(360deg); } } @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
 @keyframes spin { to { transform: rotate(360deg); } }

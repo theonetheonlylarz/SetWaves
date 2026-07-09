@@ -36,17 +36,21 @@ model User {
   tokenGrants           TokenGrant[]
   tips                  Tip[]
   genreVotes            GenreVote[]
+  payouts               Payout[]
 }
 
 model Fan {
-  id           String      @id @default(cuid())
-  email        String      @unique
-  passwordHash String
-  coinBalance  Int         @default(0)
-  createdAt    DateTime    @default(now())
-  queueItems   QueueItem[]
-  shoutouts    Shoutout[]
-  tips         Tip[]
+  id               String      @id @default(cuid())
+  email            String      @unique
+  passwordHash     String
+  displayName      String      @default("")
+  coinBalance      Int         @default(0)
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime    @default(now())
+  queueItems       QueueItem[]
+  shoutouts        Shoutout[]
+  tips             Tip[]
 }
 
 model Song {
@@ -104,6 +108,15 @@ model Tip {
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
+}
+
+model Payout {
+  id          String   @id @default(uuid())
+  amountCents Int
+  transferId  String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
 }
 
 model TokenPackage {

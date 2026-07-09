@@ -53,6 +53,7 @@ export default function Dashboard() {
   const [payoutMsg, setPayoutMsg] = useState('')
   const [pendingEarningsCents, setPendingEarningsCents] = useState(0)
   const [stripeStatusMsg, setStripeStatusMsg] = useState('')
+  const [payouts, setPayouts] = useState([])
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const wsRef = useRef(null)
@@ -124,6 +125,13 @@ export default function Dashboard() {
     } catch {}
   }
 
+  const fetchPayouts = async () => {
+    try {
+      const res = await fetch('/api/payouts', { headers })
+      if (res.ok) setPayouts(await res.json())
+    } catch {}
+  }
+
   useEffect(() => {
     fetchAll().then(() => {
       fetch('/api/profile', { headers }).then(r => r.json()).then(p => fetchVotes(p.slug)).catch(() => {})
@@ -132,6 +140,7 @@ export default function Dashboard() {
     fetchShoutouts()
     fetchStats()
     fetchTips()
+    fetchPayouts()
   }, [])
 
   useEffect(() => {
@@ -157,21 +166,29 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!profile?.id) return
-    const wsBase = window.location.origin.replace(/^http/, 'ws')
-    wsRef.current = new WebSocket(wsBase + '/ws/' + profile.id)
-    wsRef.current.onmessage = (evt) => {
-      try {
-        const msg = JSON.parse(evt.data)
-        if (msg.type === 'QUEUE_UPDATE') fetchAll()
-        if (msg.type === 'SHOUTOUT_NEW') { fetchShoutouts(); fetchStats() }
-        if (msg.type === 'SHOUTOUT_READ') fetchShoutouts()
-        if (msg.type === 'TIP_NEW') { fetchTips(); fetchStats() }
-        if (msg.type === 'SHOW_STATUS') setQueueOpen(msg.queueOpen)
-        if (msg.type === 'NOW_PLAYING') { setNowPlayingText(msg.nowPlaying || ''); setNowPlayingInput(msg.nowPlaying || '') }
-        if (msg.type === 'VOTE_UPDATE') fetchVotes(profile?.slug)
-      } catch { fetchAll() }
+    let ws, reconnectTimer, dead = false
+    const connect = () => {
+      if (dead) return
+      const wsBase = window.location.origin.replace(/^http/, 'ws')
+      ws = new WebSocket(wsBase + '/ws/' + profile.id)
+      wsRef.current = ws
+      ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data)
+          if (msg.type === 'QUEUE_UPDATE') fetchAll()
+          if (msg.type === 'SHOUTOUT_NEW') { fetchShoutouts(); fetchStats() }
+          if (msg.type === 'SHOUTOUT_READ') fetchShoutouts()
+          if (msg.type === 'TIP_NEW') { fetchTips(); fetchStats() }
+          if (msg.type === 'SHOW_STATUS') setQueueOpen(msg.queueOpen)
+          if (msg.type === 'NOW_PLAYING') { setNowPlayingText(msg.nowPlaying || ''); setNowPlayingInput(msg.nowPlaying || '') }
+          if (msg.type === 'VOTE_UPDATE') fetchVotes(profile?.slug)
+        } catch { fetchAll() }
+      }
+      ws.onclose = () => { if (!dead) reconnectTimer = setTimeout(connect, 3000) }
+      ws.onerror = () => {}
     }
-    return () => wsRef.current?.close()
+    connect()
+    return () => { dead = true; clearTimeout(reconnectTimer); ws?.close() }
   }, [profile?.id])
 
   const logout = () => { localStorage.clear(); navigate('/login') }
@@ -256,6 +273,7 @@ export default function Dashboard() {
       const data = await res.json()
       if (!res.ok) { setPayoutMsg(data.error || 'Payout failed'); setTimeout(() => setPayoutMsg(''), 4000); return }
       setPendingEarningsCents(0)
+      fetchPayouts()
       setPayoutMsg('✓ Paid out!')
       setTimeout(() => setPayoutMsg(''), 4000)
     } catch { setPayoutMsg('Network error'); setTimeout(() => setPayoutMsg(''), 4000) }
@@ -857,6 +875,24 @@ export default function Dashboard() {
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {payouts.length > 0 && (
+              <div className="card">
+                <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Payout History</h3>
+                <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '14px' }}>Past earnings transferred to your account</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {payouts.map(p => (
+                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--surface2)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: '14px', color: 'var(--neon)' }}>${(p.amountCents / 100).toFixed(2)}</p>
+                        <p style={{ color: 'var(--muted)', fontSize: '11px', marginTop: '2px' }}>{new Date(p.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      </div>
+                      <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'monospace' }}>{p.transferId.slice(0, 12)}…</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

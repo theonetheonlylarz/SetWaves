@@ -6,6 +6,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const { exec } = require('child_process');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
 const path = require('path');
 
@@ -20,6 +22,23 @@ let stripeInstance = null;
 if (process.env.STRIPE_SECRET_KEY) {
   const Stripe = require('stripe');
   stripeInstance = Stripe(process.env.STRIPE_SECRET_KEY);
+}
+
+let mailTransporter = null;
+if (process.env.SMTP_HOST) {
+  mailTransporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+}
+async function sendEmail(to, subject, html) {
+  if (!mailTransporter) { console.log('[email] No SMTP configured — skipping to:', to); return false; }
+  try {
+    await mailTransporter.sendMail({ from: process.env.SMTP_FROM || '"SetWaves" <noreply@setwaves.com>', to, subject, html });
+    return true;
+  } catch (e) { console.error('[email] send failed:', e.message); return false; }
 }
 
 // STRIPE WEBHOOK (must be before express.json)
@@ -135,19 +154,46 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/forgot-password', async (req, res) => {
   if (!req.body.email) return res.status(400).json({ error: 'Email required' });
+  try {
+    const user = await prisma.user.findUnique({ where: { email: req.body.email } });
+    if (user) {
+      const token = crypto.randomBytes(32).toString('hex');
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { resetToken: token, resetTokenExpiry: new Date(Date.now() + 3600000) },
+      });
+      const resetUrl = CLIENT_URL + '/reset-password?token=' + token;
+      await sendEmail(user.email, 'Reset your SetWaves password',
+        '<p>Click the link to reset your password (expires in 1 hour):</p><p><a href="' + resetUrl + '">' + resetUrl + '</a></p><p>If you didn\'t request this, ignore this email.</p>'
+      );
+    }
+  } catch (e) { console.error('[forgot-password]', e.message); }
   res.json({ message: 'If that email is registered, a reset link has been sent.' });
+});
+
+app.post('/api/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password || password.length < 6)
+    return res.status(400).json({ error: 'Token and password (min 6 chars) required' });
+  try {
+    const user = await prisma.user.findFirst({ where: { resetToken: token, resetTokenExpiry: { gt: new Date() } } });
+    if (!user) return res.status(400).json({ error: 'Invalid or expired reset link — request a new one.' });
+    const hashed = await bcrypt.hash(password, 10);
+    await prisma.user.update({ where: { id: user.id }, data: { password: hashed, resetToken: null, resetTokenExpiry: null } });
+    res.json({ message: 'Password updated successfully.' });
+  } catch (e) { res.status(500).json({ error: 'Failed to reset password' }); }
 });
 // -- FAN AUTH --
 
 app.post('/api/fan/register', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, displayName } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
   try {
     const passwordHash = await bcrypt.hash(password, 10);
-    const fan = await prisma.fan.create({ data: { email, passwordHash } });
+    const fan = await prisma.fan.create({ data: { email, passwordHash, displayName: (displayName || '').trim().slice(0, 40) } });
     const token = jwt.sign({ fanId: fan.id, role: 'fan' }, JWT_SECRET, { expiresIn: '90d' });
-    res.json({ token, fan: { email: fan.email, coinBalance: fan.coinBalance } });
+    res.json({ token, fan: { id: fan.id, email: fan.email, coinBalance: fan.coinBalance, displayName: fan.displayName } });
   } catch (e) {
     if (e.code === 'P2002') return res.status(400).json({ error: 'Email already registered' });
     res.status(500).json({ error: 'Registration failed' });
@@ -162,7 +208,7 @@ app.post('/api/fan/login', async (req, res) => {
     if (!fan || !(await bcrypt.compare(password, fan.passwordHash)))
       return res.status(401).json({ error: 'Invalid email or password' });
     const token = jwt.sign({ fanId: fan.id, role: 'fan' }, JWT_SECRET, { expiresIn: '90d' });
-    res.json({ token, fan: { email: fan.email, coinBalance: fan.coinBalance } });
+    res.json({ token, fan: { id: fan.id, email: fan.email, coinBalance: fan.coinBalance, displayName: fan.displayName } });
   } catch (e) { res.status(500).json({ error: 'Login failed' }); }
 });
 
@@ -170,8 +216,40 @@ app.get('/api/fan/me', fanAuth, async (req, res) => {
   try {
     const fan = await prisma.fan.findUnique({ where: { id: req.fanId } });
     if (!fan) return res.status(404).json({ error: 'Account not found' });
-    res.json({ email: fan.email, coinBalance: fan.coinBalance });
+    res.json({ id: fan.id, email: fan.email, coinBalance: fan.coinBalance, displayName: fan.displayName });
   } catch (e) { res.status(500).json({ error: 'Failed to fetch account' }); }
+});
+
+app.post('/api/fan/forgot-password', async (req, res) => {
+  if (!req.body.email) return res.status(400).json({ error: 'Email required' });
+  try {
+    const fan = await prisma.fan.findUnique({ where: { email: req.body.email } });
+    if (fan) {
+      const token = crypto.randomBytes(32).toString('hex');
+      await prisma.fan.update({
+        where: { id: fan.id },
+        data: { resetToken: token, resetTokenExpiry: new Date(Date.now() + 3600000) },
+      });
+      const resetUrl = CLIENT_URL + '/fan-reset-password?token=' + token;
+      await sendEmail(fan.email, 'Reset your SetWaves password',
+        '<p>Click the link to reset your password (expires in 1 hour):</p><p><a href="' + resetUrl + '">' + resetUrl + '</a></p>'
+      );
+    }
+  } catch (e) { console.error('[fan/forgot-password]', e.message); }
+  res.json({ message: 'If that email is registered, a reset link has been sent.' });
+});
+
+app.post('/api/fan/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password || password.length < 6)
+    return res.status(400).json({ error: 'Token and password (min 6 chars) required' });
+  try {
+    const fan = await prisma.fan.findFirst({ where: { resetToken: token, resetTokenExpiry: { gt: new Date() } } });
+    if (!fan) return res.status(400).json({ error: 'Invalid or expired reset link — request a new one.' });
+    const hashed = await bcrypt.hash(password, 10);
+    await prisma.fan.update({ where: { id: fan.id }, data: { passwordHash: hashed, resetToken: null, resetTokenExpiry: null } });
+    res.json({ message: 'Password updated successfully.' });
+  } catch (e) { res.status(500).json({ error: 'Failed to reset password' }); }
 });
 
 app.put('/api/fan/balance', fanAuth, async (req, res) => {
@@ -299,11 +377,17 @@ app.get('/api/queue/pending', auth, async (req, res) => {
 });
 
 app.put('/api/queue/:id/played', auth, async (req, res) => {
+  const item = await prisma.queueItem.findFirst({ where: { id: req.params.id, userId: req.userId } });
+  if (!item) return res.status(404).json({ error: 'Not found' });
   await prisma.queueItem.updateMany({ where: { id: req.params.id, userId: req.userId }, data: { played: true } });
-  const user = await prisma.user.findUnique({ where: { id: req.userId } });
+  const user = await prisma.user.update({ where: { id: req.userId }, data: { nowPlaying: item.songTitle } });
   broadcast(req.userId, { type: 'QUEUE_UPDATE' });
-  if (user) broadcast(user.slug, { type: 'QUEUE_UPDATE' });
-  res.json({ success: true });
+  broadcast(req.userId, { type: 'NOW_PLAYING', nowPlaying: item.songTitle });
+  if (user) {
+    broadcast(user.slug, { type: 'QUEUE_UPDATE' });
+    broadcast(user.slug, { type: 'NOW_PLAYING', nowPlaying: item.songTitle });
+  }
+  res.json({ success: true, nowPlaying: item.songTitle });
 });
 
 app.delete('/api/queue/:id', auth, async (req, res) => {
@@ -336,7 +420,10 @@ app.put('/api/queue/:id/accept', auth, async (req, res) => {
       prisma.user.update({ where: { id: req.userId }, data: { pendingEarningsCents: { increment: item.tokens * 90 } } }),
     ]);
     broadcast(req.userId, { type: 'QUEUE_UPDATE' });
-    if (user) broadcast(user.slug, { type: 'QUEUE_UPDATE' });
+    if (user) {
+      broadcast(user.slug, { type: 'QUEUE_UPDATE' });
+      broadcast(user.slug, { type: 'REQUEST_STATUS', songTitle: item.songTitle, status: 'ACCEPTED', fanId: item.fanId });
+    }
     res.json(updated);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -350,7 +437,10 @@ app.put('/api/queue/:id/deny', auth, async (req, res) => {
     await prisma.queueItem.delete({ where: { id: item.id } });
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
     broadcast(req.userId, { type: 'QUEUE_UPDATE' });
-    if (user) broadcast(user.slug, { type: 'QUEUE_UPDATE' });
+    if (user) {
+      broadcast(user.slug, { type: 'QUEUE_UPDATE' });
+      broadcast(user.slug, { type: 'REQUEST_STATUS', songTitle: item.songTitle, status: 'DENIED', fanId: item.fanId });
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -644,8 +734,17 @@ app.post('/api/stripe/payout', auth, async (req, res) => {
       destination: user.stripeAccountId,
       description: 'Next Up earnings payout',
     });
-    await prisma.user.update({ where: { id: req.userId }, data: { pendingEarningsCents: 0 } });
+    await Promise.all([
+      prisma.user.update({ where: { id: req.userId }, data: { pendingEarningsCents: 0 } }),
+      prisma.payout.create({ data: { amountCents: transfer.amount, transferId: transfer.id, userId: req.userId } }),
+    ]);
     res.json({ success: true, amountCents: transfer.amount, transferId: transfer.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/payouts', auth, async (req, res) => {
+  try {
+    res.json(await prisma.payout.findMany({ where: { userId: req.userId }, orderBy: { createdAt: 'desc' } }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

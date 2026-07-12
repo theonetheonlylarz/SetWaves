@@ -21,7 +21,7 @@ export default function Dashboard() {
   const [shoutouts, setShoutouts] = useState([])
   const [tips, setTips] = useState([])
   const [stats, setStats] = useState(null)
-  const [tab, setTab] = useState('inbox')
+  const [tab, setTab] = useState('live')
   const [newSong, setNewSong] = useState({ title: '', artist: '', genre: 'Other' })
   const [qr, setQr] = useState(null)
   const [error, setError] = useState('')
@@ -368,24 +368,27 @@ export default function Dashboard() {
   const activeQueue = queue.filter(i => !i.played)
   const unreadShoutouts = shoutouts.filter(s => !s.read).length
   const totalEarned = stats ? (stats.totalCoins * 0.9).toFixed(2) : null
+  const activityFeed = [
+    ...shoutouts.map(s => ({ ...s, _type: 'shoutout' })),
+    ...tips.map(t => ({ ...t, _type: 'tip' }))
+  ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
 
   const TABS = [
-    { id: 'inbox', label: 'Inbox', badge: pendingQueue.length },
-    { id: 'queue', label: 'Queue', badge: activeQueue.length },
-    { id: 'shoutouts', label: '📣 Shoutouts', badge: unreadShoutouts },
-    { id: 'tips', label: '💰 Tips', badge: 0 },
-    { id: 'songs', label: 'Setlist' },
-    { id: 'qr', label: 'QR Code' },
-    { id: 'settings', label: 'Settings' },
+    { id: 'live', label: '🎤 Live', badge: pendingQueue.length },
+    { id: 'activity', label: '📣 Activity', badge: unreadShoutouts },
+    { id: 'setlist', label: 'Setlist' },
+    { id: 'setup', label: 'Setup' },
   ]
+
+  const stripeBlocked = stripeEnabled && !stripeOnboarded && !queueOpen
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
       <header style={{
         background: 'rgba(15,15,26,0.85)',
         borderBottom: '1px solid var(--border)',
-        padding: '0 24px',
-        height: '56px',
+        padding: '0 20px',
+        height: '54px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -398,8 +401,8 @@ export default function Dashboard() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div className="logo-mark" style={{ width: '28px', height: '28px', fontSize: '13px', borderRadius: '6px' }}>🎵</div>
           <div>
-            <div className="logo-text" style={{ fontSize: '16px', lineHeight: '1.2' }}>Next Up</div>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', letterSpacing: '0.01em' }}>{profile.displayName}</div>
+            <div className="logo-text" style={{ fontSize: '16px', lineHeight: '1.2' }}>SetWaves</div>
+            <div style={{ fontSize: '11px', color: 'var(--muted)' }}>{profile.displayName}</div>
           </div>
         </div>
         <div className="dash-header-actions" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -409,24 +412,28 @@ export default function Dashboard() {
             </div>
           )}
           <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer"
-            style={{ fontSize: '13px', color: 'var(--neon)', display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', background: 'var(--neon-dim)', borderRadius: '7px', fontWeight: 600, border: '1px solid rgba(0,255,136,0.2)', textDecoration: 'none', transition: 'all 0.15s' }}>
-            View Show
+            style={{ fontSize: '13px', color: 'var(--neon)', display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', background: 'var(--neon-dim)', borderRadius: '7px', fontWeight: 600, border: '1px solid rgba(0,255,136,0.2)', textDecoration: 'none' }}>
+            Fan Page
           </a>
           <button onClick={logout} className="btn-secondary" style={{ fontSize: '13px', padding: '6px 12px' }}>Sign out</button>
         </div>
       </header>
 
-      <main style={{ maxWidth: '820px', margin: '0 auto', padding: '28px 20px' }}>
-        {error && error !== 'CONNECT_NOT_ENABLED' && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+      <main style={{ maxWidth: '760px', margin: '0 auto', padding: '20px 16px' }}>
+
+        {error && error !== 'CONNECT_NOT_ENABLED' && (
+          <div className="error" style={{ marginBottom: '14px' }}>{error}</div>
+        )}
+
         {error === 'CONNECT_NOT_ENABLED' && (
-          <div style={{ background: 'rgba(245,158,11,0.08)', border: '1.5px solid rgba(245,158,11,0.4)', borderRadius: 'var(--radius-md)', padding: '16px 20px', marginBottom: '16px' }}>
-            <p style={{ fontWeight: 800, fontSize: '15px', color: 'var(--amber)', marginBottom: '6px' }}>⚠️ Stripe Connect not activated</p>
-            <p style={{ color: 'var(--muted)', fontSize: '13px', lineHeight: '1.6', marginBottom: '10px' }}>
-              Your Stripe account needs Connect enabled before performers can receive payouts. This is a one-time platform setup — it takes about 2 minutes.
+          <div style={{ background: 'rgba(245,158,11,0.08)', border: '1.5px solid rgba(245,158,11,0.4)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '14px' }}>
+            <p style={{ fontWeight: 800, fontSize: '14px', color: 'var(--amber)', marginBottom: '6px' }}>⚠️ Stripe Connect not activated</p>
+            <p style={{ color: 'var(--muted)', fontSize: '13px', lineHeight: '1.5', marginBottom: '10px' }}>
+              Your Stripe account needs Connect enabled before you can receive payouts. Go to your Stripe dashboard to set it up.
             </p>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <a href="https://dashboard.stripe.com/connect" target="_blank" rel="noreferrer"
-                style={{ background: 'rgba(245,158,11,0.15)', border: '1.5px solid rgba(245,158,11,0.5)', borderRadius: '8px', color: '#fbbf24', fontWeight: 700, fontSize: '13px', padding: '8px 16px', textDecoration: 'none', display: 'inline-block' }}>
+                style={{ background: 'rgba(245,158,11,0.15)', border: '1.5px solid rgba(245,158,11,0.5)', borderRadius: '8px', color: '#fbbf24', fontWeight: 700, fontSize: '13px', padding: '7px 14px', textDecoration: 'none' }}>
                 → Enable Stripe Connect
               </a>
               <button onClick={() => setError(null)} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit' }}>Dismiss</button>
@@ -435,302 +442,238 @@ export default function Dashboard() {
         )}
 
         {stripeStatusMsg && (
-          <div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.25)', borderRadius: 'var(--radius-md)', padding: '12px 18px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ background: 'rgba(0,255,136,0.08)', border: '1.5px solid rgba(0,255,136,0.25)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ color: 'var(--neon)', fontWeight: 700, fontSize: '14px' }}>✅ {stripeStatusMsg}</span>
             <button onClick={() => setStripeStatusMsg('')} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '18px', cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>×</button>
           </div>
         )}
 
         {stripeEnabled && !stripeOnboarded && (
-          <div style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.08) 100%)', border: '1.5px solid rgba(99,102,241,0.35)', borderRadius: 'var(--radius-md)', padding: '20px 22px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.08) 100%)', border: '1.5px solid rgba(99,102,241,0.35)', borderRadius: 'var(--radius-md)', padding: '16px 18px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
               <div>
-                <p style={{ fontWeight: 800, fontSize: '16px', color: 'var(--text)', marginBottom: '6px' }}>💳 Connect your payout account</p>
-                <p style={{ color: 'var(--muted)', fontSize: '13px', lineHeight: '1.5' }}>
-                  Link a bank account or debit card to receive payouts from fan coin purchases.<br />
-                  <span style={{ color: '#a78bfa', fontWeight: 700 }}>You keep 90% of every transaction.</span> Powered by Stripe — takes ~2 minutes.
-                </p>
+                <p style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text)', marginBottom: '4px' }}>💳 Connect your payout account</p>
+                <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Link a bank or debit card · <span style={{ color: '#a78bfa', fontWeight: 700 }}>you keep 90%</span></p>
               </div>
               <button onClick={connectStripe} disabled={connectingStripe}
-                style={{ background: 'rgba(99,102,241,0.15)', border: '1.5px solid rgba(99,102,241,0.5)', borderRadius: '10px', color: '#818cf8', fontWeight: 800, fontSize: '14px', padding: '11px 22px', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0, transition: 'all 0.15s' }}>
+                style={{ background: 'rgba(99,102,241,0.15)', border: '1.5px solid rgba(99,102,241,0.5)', borderRadius: '10px', color: '#818cf8', fontWeight: 800, fontSize: '14px', padding: '10px 20px', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 {connectingStripe ? '⏳ Redirecting...' : '→ Set Up Payments'}
               </button>
             </div>
           </div>
         )}
 
-
-        <div className="card" style={{ marginBottom: '16px', padding: '14px 16px' }}>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: genreVoteEnabled ? '14px' : 0 }}>
-            {(() => {
-              const stripeBlocked = stripeEnabled && !stripeOnboarded && !queueOpen
-              return (
-                <button onClick={toggleQueue} disabled={togglingQueue}
-                  title={stripeBlocked ? 'Connect a payout account to open the queue' : undefined}
-                  style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', minHeight: '38px',
-                    background: stripeBlocked ? 'rgba(245,158,11,0.08)' : queueOpen ? 'rgba(0,255,136,0.08)' : 'rgba(255,91,91,0.08)',
-                    borderColor: stripeBlocked ? 'rgba(245,158,11,0.4)' : queueOpen ? 'rgba(0,255,136,0.35)' : 'rgba(255,91,91,0.35)',
-                    color: stripeBlocked ? 'var(--amber)' : queueOpen ? 'var(--neon)' : 'var(--red)' }}>
-                  <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: stripeBlocked ? 'var(--amber)' : queueOpen ? 'var(--neon)' : 'var(--red)', display: 'inline-block', flexShrink: 0 }} />
-                  {stripeBlocked ? '⚠️ Setup Required' : queueOpen ? 'Queue Open' : 'Queue Closed'}
-                </button>
-              )
-            })()}
-            <button onClick={toggleGenreVoteEnabled}
-              style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 16px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', minHeight: '38px',
-                background: genreVoteEnabled ? 'rgba(139,92,246,0.1)' : 'var(--surface2)',
-                borderColor: genreVoteEnabled ? 'rgba(139,92,246,0.4)' : 'var(--border)',
-                color: genreVoteEnabled ? 'var(--purple)' : 'var(--muted)' }}>
-              🎭 {genreVoteEnabled ? 'Vibe Vote On' : 'Vibe Vote Off'}
-            </button>
-            <div style={{ flex: 1, display: 'flex', gap: '6px', minWidth: '180px' }}>
-              <input placeholder="Now playing..." value={nowPlayingInput} onChange={e => setNowPlayingInput(e.target.value.slice(0, 80))} onKeyDown={e => e.key === 'Enter' && saveNowPlaying()} style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }} />
-              <button onClick={() => saveNowPlaying()} disabled={savingNowPlaying} className="btn-secondary" style={{ padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap', minHeight: '38px' }}>
-                {savingNowPlaying ? '...' : 'Set'}
-              </button>
-              {nowPlayingText && <button onClick={() => { setNowPlayingInput(''); saveNowPlaying('') }} className="btn-secondary" style={{ padding: '8px 10px', fontSize: '12px', minHeight: '38px' }}>✕</button>}
-            </div>
-          </div>
-
-          {genreVoteEnabled && (
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
-                <p style={{ fontSize: '12px', fontWeight: 700, color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>🎭 Pick genres fans can vote on</p>
-                {voteResults.length > 0 && (
-                  <button onClick={resetVotes} disabled={resetingVotes} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--muted)', fontSize: '11px', fontWeight: 600, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', minHeight: '28px' }}>
-                    {resetingVotes ? '...' : 'Reset Votes'}
-                  </button>
-                )}
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: voteResults.length > 0 ? '14px' : 0 }}>
-                {GENRES.map(g => (
-                  <button key={g} onClick={() => toggleGenreOption(g)}
-                    className={'chip' + (genreVoteOptions.includes(g) ? ' active' : '')}
-                    style={{ minHeight: '30px' }}>
-                    {g}
-                  </button>
-                ))}
-              </div>
-              {voteResults.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Live results</p>
-                  {voteResults.map((v, i) => (
-                    <div key={v.genre}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '13px', fontWeight: i === 0 ? 700 : 500, color: i === 0 ? 'var(--neon)' : 'var(--text-secondary)' }}>{i === 0 ? '🥇 ' : ''}{v.genre}</span>
-                        <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{v.count} vote{v.count !== 1 ? 's' : ''} · {v.pct}%</span>
-                      </div>
-                      <div className="vote-bar-track">
-                        <div className={'vote-bar-fill' + (i === 0 ? ' leader' : '')} style={{ width: v.pct + '%' }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '2px', marginBottom: '24px', background: 'var(--surface)', padding: '3px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', flexWrap: 'wrap' }}>
+        {/* Tab bar */}
+        <div style={{ display: 'flex', gap: '3px', marginBottom: '20px', background: 'var(--surface)', padding: '3px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ flex: '1 1 auto', minWidth: '70px', padding: '8px 10px', borderRadius: '9px', background: tab === t.id ? 'var(--surface2)' : 'transparent', color: tab === t.id ? 'var(--text)' : 'var(--muted)', fontSize: '13px', fontWeight: 600, border: tab === t.id ? '1px solid var(--border)' : '1px solid transparent', boxShadow: tab === t.id ? '0 1px 6px rgba(0,0,0,0.3)' : 'none', transition: 'all 0.15s', whiteSpace: 'nowrap' }}>
+              style={{ flex: 1, padding: '9px 8px', borderRadius: '9px', background: tab === t.id ? 'var(--surface2)' : 'transparent', color: tab === t.id ? 'var(--text)' : 'var(--muted)', fontSize: '13px', fontWeight: 600, border: tab === t.id ? '1px solid var(--border)' : '1px solid transparent', boxShadow: tab === t.id ? '0 1px 6px rgba(0,0,0,0.3)' : 'none', transition: 'all 0.15s', whiteSpace: 'nowrap', cursor: 'pointer', fontFamily: 'inherit' }}>
               {t.label}
-              {t.badge > 0 && <span style={{ background: t.id === 'shoutouts' ? '#ef4444' : 'var(--neon)', color: '#fff', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px', marginLeft: '4px' }}>{t.badge}</span>}
+              {t.badge > 0 && <span style={{ background: t.id === 'activity' ? '#ef4444' : 'var(--neon)', color: t.id === 'activity' ? '#fff' : '#000', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', marginLeft: '5px' }}>{t.badge}</span>}
             </button>
           ))}
         </div>
 
-        {tab === 'inbox' && (
-          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {pendingQueue.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '64px 20px' }}>
-                <div style={{ fontSize: '52px', marginBottom: '16px' }}>📬</div>
-                <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '17px', marginBottom: '8px' }}>No pending requests</p>
-                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>New song requests will appear here for you to approve</p>
-              </div>
-            ) : pendingQueue.map((item, i) => {
-              const tierInfo = TIER_META[item.tier] || TIER_META.STANDARD
-              return (
-                <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 18px', borderLeft: '3px solid ' + tierInfo.color, animation: 'fadeUp 0.2s ease ' + (i * 0.04) + 's both' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flex: 1, minWidth: 0 }}>
-                    <div style={{ width: '38px', height: '38px', background: tierInfo.bg, border: '1px solid ' + tierInfo.color + '40', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>
-                      {tierInfo.icon}
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <p style={{ fontWeight: 700, fontSize: '15px' }}>{item.songTitle}</p>
-                        <span style={{ fontSize: '10px', color: tierInfo.color, fontWeight: 700, background: tierInfo.bg, padding: '2px 7px', borderRadius: '6px', whiteSpace: 'nowrap' }}>{tierInfo.label}</span>
-                      </div>
-                      <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
-                        from <span style={{ color: 'var(--text-secondary)' }}>{item.requester}</span>
-                        <span style={{ marginLeft: '8px', color: tierInfo.color, fontSize: '11px', fontWeight: 600 }}>{tierInfo.icon} {item.tokens} coins</span>
-                      </p>
-                      {item.dedication && (
-                        <p style={{ color: '#a78bfa', fontSize: '12px', marginTop: '4px', fontStyle: 'italic' }}>
-                          Dedicated to: "{item.dedication}"
-                        </p>
-                      )}
-                      <p style={{ color: 'var(--muted)', fontSize: '11px', marginTop: '3px' }}>{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                    </div>
-                  </div>
-                  <div className="queue-item-actions" style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
-                    <button onClick={() => acceptQueueItem(item.id)} style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--neon)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: '7px', padding: '6px 14px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}>
-                      Accept
-                    </button>
-                    <button onClick={() => denyQueueItem(item.id)} style={{ background: 'rgba(255,91,91,0.08)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '6px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-                      Deny
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {tab === 'tips' && (
-          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {tips.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '64px 20px' }}>
-                <div style={{ fontSize: '52px', marginBottom: '16px' }}>💰</div>
-                <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '17px', marginBottom: '8px' }}>No tips yet</p>
-                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Fans can send you tips from your show page</p>
-              </div>
-            ) : tips.map(tip => (
-              <div key={tip.id} className="card" style={{ padding: '16px 18px', borderLeft: '3px solid #eab308' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px', color: '#eab308' }}>
-                      💰 {tip.coins} coins
-                    </p>
-                    <p style={{ color: 'var(--muted)', fontSize: '12px' }}>
-                      from <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{tip.fromName}</span>
-                      <span style={{ marginLeft: '8px', color: 'var(--muted)' }}>{new Date(tip.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </p>
-                    {tip.message && (
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '6px', fontStyle: 'italic' }}>"{tip.message}"</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === 'queue' && (
-          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {activeQueue.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '64px 20px' }}>
-                <div style={{ fontSize: '52px', marginBottom: '16px' }}>🎤</div>
-                <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '17px', marginBottom: '8px' }}>Queue is empty</p>
-                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Share your show link so fans can request songs</p>
-                <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer"
-                  style={{ display: 'inline-block', marginTop: '20px', padding: '9px 18px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
-                  Open Fan Page
-                </a>
-              </div>
-            ) : activeQueue.map((item, i) => {
-              const tierInfo = TIER_META[item.tier] || TIER_META.STANDARD
-              return (
-                <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 18px', borderLeft: '3px solid ' + tierInfo.color, animation: 'fadeUp 0.2s ease ' + (i * 0.04) + 's both' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flex: 1, minWidth: 0 }}>
-                    <div style={{ width: '38px', height: '38px', background: tierInfo.bg, border: '1px solid ' + tierInfo.color + '40', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', flexShrink: 0 }}>
-                      {tierInfo.icon}
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <p style={{ fontWeight: 700, fontSize: '15px' }}>{item.songTitle}</p>
-                        {item.tier !== 'STANDARD' && (
-                          <span style={{ fontSize: '10px', color: tierInfo.color, fontWeight: 700, background: tierInfo.bg, padding: '2px 7px', borderRadius: '6px', whiteSpace: 'nowrap' }}>{tierInfo.label}</span>
-                        )}
-                      </div>
-                      <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
-                        from <span style={{ color: 'var(--text-secondary)' }}>{item.requester}</span>
-                        <span style={{ marginLeft: '8px', color: tierInfo.color, fontSize: '11px', fontWeight: 600 }}>
-                          {tierInfo.icon} {item.tokens}
-                        </span>
-                      </p>
-                      {item.dedication && (
-                        <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '4px', fontStyle: 'italic' }}>
-                          {'"' + item.dedication + '"'}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="queue-item-actions" style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
-                    <button onClick={() => markPlayed(item.id)} className="btn-secondary" style={{ fontSize: '12px', padding: '6px 14px' }}>
-                      Played
-                    </button>
-                    <button onClick={() => removeFromQueue(item.id)} style={{ background: 'rgba(255,91,91,0.08)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-                      x
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        {tab === 'shoutouts' && (
-          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {shoutouts.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '64px 20px' }}>
-                <div style={{ fontSize: '52px', marginBottom: '16px' }}>📣</div>
-                <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '17px', marginBottom: '8px' }}>No shoutouts yet</p>
-                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Fans can send paid shoutouts from your show page</p>
-              </div>
-            ) : shoutouts.map(s => (
-              <div key={s.id} className="card" style={{ padding: '16px 18px', borderLeft: '3px solid ' + (s.read ? 'var(--border)' : '#ef4444'), background: s.read ? 'var(--surface)' : 'rgba(239,68,68,0.04)', transition: 'all 0.3s' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>
-                      {!s.read && <span style={{ color: '#ef4444', marginRight: '6px', fontSize: '10px', fontWeight: 800, background: 'rgba(239,68,68,0.1)', padding: '2px 7px', borderRadius: '6px' }}>NEW</span>}
-                      "{s.message}"
-                    </p>
-                    <p style={{ color: 'var(--muted)', fontSize: '12px' }}>
-                      from <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{s.fromName}</span>
-                      <span style={{ marginLeft: '8px', color: '#ef4444', fontWeight: 600 }}>📣 {s.coins} coins</span>
-                      <span style={{ marginLeft: '8px', color: 'var(--muted)' }}>{new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </p>
-                  </div>
-                  {!s.read && (
-                    <button onClick={() => markShoutoutRead(s.id)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px', flexShrink: 0 }}>
-                      Read
-                    </button>
+        {/* LIVE TAB */}
+        {tab === 'live' && (
+          <div className="fade-up">
+            {/* Queue control row */}
+            <div className="card" style={{ marginBottom: '16px', padding: '14px 16px' }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button onClick={toggleQueue} disabled={togglingQueue}
+                  title={stripeBlocked ? 'Connect a payout account to open the queue' : undefined}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 18px', borderRadius: '10px', border: '1.5px solid', fontWeight: 700, fontSize: '14px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                    background: stripeBlocked ? 'rgba(245,158,11,0.08)' : queueOpen ? 'rgba(0,255,136,0.08)' : 'rgba(255,91,91,0.08)',
+                    borderColor: stripeBlocked ? 'rgba(245,158,11,0.4)' : queueOpen ? 'rgba(0,255,136,0.35)' : 'rgba(255,91,91,0.35)',
+                    color: stripeBlocked ? 'var(--amber)' : queueOpen ? 'var(--neon)' : 'var(--red)' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: stripeBlocked ? 'var(--amber)' : queueOpen ? 'var(--neon)' : 'var(--red)', display: 'inline-block', flexShrink: 0 }} />
+                  {stripeBlocked ? '⚠️ Setup Required' : queueOpen ? 'Queue Open' : 'Queue Closed'}
+                </button>
+                <div style={{ flex: 1, display: 'flex', gap: '6px', minWidth: '160px' }}>
+                  <input
+                    placeholder="Now playing..."
+                    value={nowPlayingInput}
+                    onChange={e => setNowPlayingInput(e.target.value.slice(0, 80))}
+                    onKeyDown={e => e.key === 'Enter' && saveNowPlaying()}
+                    style={{ flex: 1, padding: '9px 12px', fontSize: '13px' }}
+                  />
+                  <button onClick={() => saveNowPlaying()} disabled={savingNowPlaying} className="btn-secondary" style={{ padding: '9px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                    {savingNowPlaying ? '...' : 'Set'}
+                  </button>
+                  {nowPlayingText && (
+                    <button onClick={() => { setNowPlayingInput(''); saveNowPlaying('') }} className="btn-secondary" style={{ padding: '9px 10px', fontSize: '12px' }}>✕</button>
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Pending requests */}
+            {pendingQueue.length > 0 && (
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                  <p style={{ fontWeight: 800, fontSize: '12px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>New Requests</p>
+                  <span style={{ background: 'var(--neon)', color: '#000', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px' }}>{pendingQueue.length}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {pendingQueue.map((item) => {
+                    const tierInfo = TIER_META[item.tier] || TIER_META.STANDARD
+                    return (
+                      <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderLeft: '3px solid ' + tierInfo.color }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: '20px', flexShrink: 0 }}>{tierInfo.icon}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontWeight: 700, fontSize: '14px', marginBottom: '2px' }}>{item.songTitle}</p>
+                            <p style={{ color: 'var(--muted)', fontSize: '12px' }}>
+                              {item.requester} · <span style={{ color: tierInfo.color, fontWeight: 600 }}>{item.tokens} coins</span>
+                              {item.tier !== 'STANDARD' && <span style={{ marginLeft: '6px', color: tierInfo.color, fontSize: '11px', fontWeight: 700, background: tierInfo.bg, padding: '1px 6px', borderRadius: '5px' }}>{tierInfo.label}</span>}
+                            </p>
+                            {item.dedication && (
+                              <p style={{ color: '#a78bfa', fontSize: '12px', marginTop: '3px', fontStyle: 'italic' }}>"{item.dedication}"</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="queue-item-actions" style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
+                          <button onClick={() => acceptQueueItem(item.id)}
+                            style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--neon)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: '8px', padding: '8px 18px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+                            ✓ Accept
+                          </button>
+                          <button onClick={() => denyQueueItem(item.id)}
+                            style={{ background: 'rgba(255,91,91,0.08)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Accepted queue */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                <p style={{ fontWeight: 800, fontSize: '12px', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Up Next</p>
+                {activeQueue.length > 0 && <span style={{ background: 'var(--surface2)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 700, borderRadius: '10px', padding: '1px 7px' }}>{activeQueue.length}</span>}
+              </div>
+              {activeQueue.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 20px' }}>
+                  <div style={{ fontSize: '44px', marginBottom: '12px' }}>🎤</div>
+                  <p style={{ color: 'var(--muted)', fontSize: '14px', marginBottom: '16px' }}>
+                    {pendingQueue.length > 0 ? 'Accept requests above to add them here' : 'No songs in queue yet'}
+                  </p>
+                  {pendingQueue.length === 0 && (
+                    <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer"
+                      style={{ display: 'inline-block', padding: '8px 16px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.25)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
+                      Open Fan Page →
+                    </a>
+                  )}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {activeQueue.map((item, i) => {
+                    const tierInfo = TIER_META[item.tier] || TIER_META.STANDARD
+                    return (
+                      <div key={item.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderLeft: '3px solid ' + tierInfo.color }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: '12px', color: 'var(--muted)', fontWeight: 800, minWidth: '22px', textAlign: 'center' }}>#{i + 1}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontWeight: 700, fontSize: '14px' }}>{item.songTitle}</p>
+                            <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '1px' }}>
+                              {item.requester}
+                              {item.tier !== 'STANDARD' && <span style={{ marginLeft: '6px', color: tierInfo.color, fontSize: '11px', fontWeight: 700 }}>{tierInfo.icon} {tierInfo.label}</span>}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="queue-item-actions" style={{ display: 'flex', gap: '6px', flexShrink: 0, marginLeft: '10px' }}>
+                          <button onClick={() => markPlayed(item.id)} className="btn-secondary" style={{ fontSize: '12px', padding: '7px 14px' }}>Played</button>
+                          <button onClick={() => removeFromQueue(item.id)}
+                            style={{ background: 'rgba(255,91,91,0.08)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '7px 10px', fontSize: '13px', cursor: 'pointer' }}>
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ACTIVITY TAB — shoutouts + tips combined */}
+        {tab === 'activity' && (
+          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {activityFeed.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '64px 20px' }}>
+                <div style={{ fontSize: '48px', marginBottom: '14px' }}>📣</div>
+                <p style={{ color: 'var(--text)', fontWeight: 700, fontSize: '16px', marginBottom: '8px' }}>No activity yet</p>
+                <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Shoutouts and tips from fans will appear here</p>
+              </div>
+            ) : activityFeed.map(item => (
+              item._type === 'shoutout' ? (
+                <div key={'s-' + item.id} className="card" style={{ padding: '14px 16px', borderLeft: '3px solid ' + (item.read ? 'var(--border)' : '#ef4444'), background: item.read ? 'var(--surface)' : 'rgba(239,68,68,0.04)', transition: 'all 0.2s' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '14px' }}>📣</span>
+                        {!item.read && <span style={{ color: '#ef4444', fontSize: '10px', fontWeight: 800, background: 'rgba(239,68,68,0.1)', padding: '2px 7px', borderRadius: '6px' }}>NEW</span>}
+                        <span style={{ color: 'var(--muted)', fontSize: '11px' }}>
+                          {item.fromName} · {item.coins} coins · {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p style={{ fontWeight: 600, fontSize: '14px', fontStyle: 'italic' }}>"{item.message}"</p>
+                    </div>
+                    {!item.read && (
+                      <button onClick={() => markShoutoutRead(item.id)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px', flexShrink: 0 }}>Read</button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div key={'t-' + item.id} className="card" style={{ padding: '14px 16px', borderLeft: '3px solid #eab308' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: item.message ? '6px' : 0, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '14px' }}>💰</span>
+                    <span style={{ color: '#eab308', fontWeight: 700, fontSize: '14px' }}>{item.coins} coin tip</span>
+                    <span style={{ color: 'var(--muted)', fontSize: '11px' }}>
+                      from {item.fromName} · {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  {item.message && <p style={{ color: 'var(--text-secondary)', fontSize: '13px', fontStyle: 'italic' }}>"{item.message}"</p>}
+                </div>
+              )
             ))}
           </div>
         )}
 
-        {tab === 'songs' && (
+        {/* SETLIST TAB */}
+        {tab === 'setlist' && (
           <div className="fade-up">
-            <div className="card" style={{ marginBottom: '16px' }}>
-              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '14px', fontWeight: 500 }}>Add songs fans can request from your setlist</p>
+            <div className="card" style={{ marginBottom: '14px' }}>
+              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '12px' }}>Add songs fans can request. Toggle them on/off any time.</p>
               <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <input placeholder="Song title" value={newSong.title} onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))} style={{ flex: '2 1 160px' }} />
-                <input placeholder="Artist (optional)" value={newSong.artist} onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))} style={{ flex: '2 1 120px' }} />
-                <select value={newSong.genre} onChange={e => setNewSong(p => ({ ...p, genre: e.target.value }))} style={{ flex: '1 1 110px' }}>
+                <input placeholder="Song title" value={newSong.title} onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))} style={{ flex: '2 1 150px' }} />
+                <input placeholder="Artist (optional)" value={newSong.artist} onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))} style={{ flex: '2 1 110px' }} />
+                <select value={newSong.genre} onChange={e => setNewSong(p => ({ ...p, genre: e.target.value }))} style={{ flex: '1 1 100px' }}>
                   {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
                 <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0, padding: '11px 18px' }}>+ Add</button>
               </form>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {songs.length === 0 && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px 0', fontSize: '14px' }}>No songs yet. Add your first one above.</p>}
+              {songs.length === 0 && (
+                <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px 0', fontSize: '14px' }}>No songs yet. Add your first one above.</p>
+              )}
               {songs.map(song => (
-                <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s' }}>
+                <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s' }}>
                   <div>
                     <p style={{ fontWeight: 600, fontSize: '14px' }}>{song.title}</p>
                     <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
                       {song.artist && <span>{song.artist} · </span>}
-                      <span style={{ background: 'var(--surface2)', padding: '1px 7px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '11px' }}>{song.genre || 'Other'}</span>
+                      <span style={{ background: 'var(--surface2)', padding: '1px 6px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '11px' }}>{song.genre || 'Other'}</span>
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                     <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>{song.active ? 'Hide' : 'Show'}</button>
-                    <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>Delete</button>
+                    <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Delete</button>
                   </div>
                 </div>
               ))}
@@ -738,110 +681,114 @@ export default function Dashboard() {
           </div>
         )}
 
-        {tab === 'qr' && (
-          <div className="fade-up">
-            <div className="card" style={{ textAlign: 'center', padding: '48px 32px' }}>
-              {qr ? (
-                <>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '15px', fontWeight: 500, marginBottom: '28px' }}>Display at your show — fans scan to request songs</p>
-                  <div style={{ display: 'inline-block', background: '#fff', padding: '16px', borderRadius: '16px', marginBottom: '24px', boxShadow: '0 0 40px rgba(0,255,136,0.1)' }}>
-                    <img src={qr.qrCode} alt="QR Code" style={{ width: '220px', height: '220px', display: 'block' }} />
-                  </div>
-                  <p className="qr-url-display" style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '20px', fontFamily: 'monospace', background: 'var(--surface2)', display: 'block', padding: '6px 14px', borderRadius: '6px', border: '1px solid var(--border)', overflowWrap: 'break-word', wordBreak: 'break-all' }}>{qr.url}</p>
-                  <div style={{ marginTop: '4px' }}>
-                    <a href={qr.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 20px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>Open Fan Page</a>
-                  </div>
-                </>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
-                  <Spinner />
-                  <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Generating QR code...</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* SETUP TAB */}
+        {tab === 'setup' && (
+          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-        {tab === 'settings' && (
-          <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* QR + show link */}
+            <div className="card" style={{ padding: '20px' }}>
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '14px' }}>Your Show Page</h3>
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {qr ? (
+                  <>
+                    <div style={{ background: '#fff', padding: '10px', borderRadius: '10px', flexShrink: 0, boxShadow: '0 0 20px rgba(0,255,136,0.1)' }}>
+                      <img src={qr.qrCode} alt="QR Code" style={{ width: '110px', height: '110px', display: 'block' }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: '160px' }}>
+                      <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '12px', lineHeight: '1.5' }}>Display this QR at your show — fans scan it to request songs. No app download needed.</p>
+                      <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '7px', padding: '8px 12px', fontSize: '12px', color: 'var(--muted)', fontFamily: 'monospace', marginBottom: '10px', overflowWrap: 'break-word', wordBreak: 'break-all' }}>
+                        {qr.url}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <a href={qr.url} target="_blank" rel="noreferrer" style={{ padding: '7px 14px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '7px', color: 'var(--neon)', fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}>Open Fan Page</a>
+                        <a href={qr.qrCode} download="setwaves-qr.png" style={{ padding: '7px 14px', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}>Download QR</a>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '20px 0' }}>
+                    <Spinner />
+                    <p style={{ color: 'var(--muted)', fontSize: '14px' }}>Generating QR code...</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Display name */}
             <div className="card">
               <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Display Name</h3>
-              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '16px' }}>Shown to fans on your public show page</p>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '14px' }}>Shown to fans on your show page</p>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input value={displayName} onChange={e => setDisplayName(e.target.value)} onFocus={() => setEditingName(true)} placeholder="Your stage name" />
-                {editingName && <button onClick={saveName} className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>}
-              </div>
-            </div>
-
-            <div className="card">
-              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Song Request Pricing</h3>
-              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '18px' }}>Set coin costs for each tier · 1 coin = $1 · <span style={{ color: 'var(--neon)', fontWeight: 700 }}>you keep 90%</span>, platform takes 10%</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-                <div className="pricing-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🎵 Add to Queue (coins)</label>
-                    <input type="number" min="1" max="100" value={coinCost} onChange={e => setCoinCost(e.target.value)} style={{ width: '100%' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>⚡ Move Up cost (coins)</label>
-                    <input type="number" min="1" max="100" value={jumpCost} onChange={e => setJumpCost(e.target.value)} style={{ width: '100%' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🚦 Max Move Ups/session</label>
-                    <input type="number" min="1" max="20" value={maxJumps} onChange={e => setMaxJumps(e.target.value)} style={{ width: '100%' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#ef4444', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🔥 Play Next cost (coins)</label>
-                    <input type="number" min="1" max="200" value={playNextCost} onChange={e => setPlayNextCost(e.target.value)} style={{ width: '100%' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#ef4444', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🔒 Max Play Next/session</label>
-                    <input type="number" min="1" max="10" value={maxPlayNext} onChange={e => setMaxPlayNext(e.target.value)} style={{ width: '100%' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>📣 Shoutout cost (coins)</label>
-                    <input type="number" min="1" max="100" value={shoutoutCost} onChange={e => setShoutoutCost(e.target.value)} style={{ width: '100%' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#eab308', marginBottom: '7px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>💰 Min Tip (coins)</label>
-                    <input type="number" min="1" max="100" value={tipCostSetting} onChange={e => setTipCostSetting(e.target.value)} style={{ width: '100%' }} />
-                  </div>
-                </div>
-
-                <div>
-                  <button onClick={savePricing} className="btn-primary" style={{ whiteSpace: 'nowrap' }} disabled={savingPricing}>
-                    {savingPricing ? 'Saving...' : pricingSaved ? 'Saved' : 'Save Pricing'}
+                {editingName && (
+                  <button onClick={saveName} className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} disabled={saving}>
+                    {saving ? 'Saving...' : 'Save'}
                   </button>
-                </div>
+                )}
               </div>
             </div>
 
+            {/* Pricing */}
+            <div className="card">
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Coin Pricing</h3>
+              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '16px' }}>1 coin = $1 · <span style={{ color: 'var(--neon)', fontWeight: 700 }}>you keep 90%</span></p>
+              <div className="pricing-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🎵 Add to Queue</label>
+                  <input type="number" min="1" max="100" value={coinCost} onChange={e => setCoinCost(e.target.value)} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>⚡ Move Up</label>
+                  <input type="number" min="1" max="100" value={jumpCost} onChange={e => setJumpCost(e.target.value)} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🚦 Max Move Ups</label>
+                  <input type="number" min="1" max="20" value={maxJumps} onChange={e => setMaxJumps(e.target.value)} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#ef4444', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🔥 Play Next</label>
+                  <input type="number" min="1" max="200" value={playNextCost} onChange={e => setPlayNextCost(e.target.value)} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#ef4444', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>🔒 Max Play Next</label>
+                  <input type="number" min="1" max="10" value={maxPlayNext} onChange={e => setMaxPlayNext(e.target.value)} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--muted)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>📣 Shoutout</label>
+                  <input type="number" min="1" max="100" value={shoutoutCost} onChange={e => setShoutoutCost(e.target.value)} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#eab308', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>💰 Min Tip</label>
+                  <input type="number" min="1" max="100" value={tipCostSetting} onChange={e => setTipCostSetting(e.target.value)} style={{ width: '100%' }} />
+                </div>
+              </div>
+              <button onClick={savePricing} className="btn-primary" disabled={savingPricing}>
+                {savingPricing ? 'Saving...' : pricingSaved ? '✓ Saved' : 'Save Pricing'}
+              </button>
+            </div>
+
+            {/* Payouts */}
             {stripeEnabled && (
               <div className="card">
                 <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Payouts</h3>
-                <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '16px' }}>
-                  You keep <span style={{ color: 'var(--neon)', fontWeight: 700 }}>90%</span> of every coin spent at your show. The platform takes 10%. Payouts go to your connected bank or debit card.
+                <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '14px' }}>
+                  You keep <span style={{ color: 'var(--neon)', fontWeight: 700 }}>90%</span> of every coin spent. Payouts go to your connected bank or debit card.
                 </p>
 
                 {pendingEarningsCents > 0 && (
                   <div style={{ background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                     <div>
-                      <p style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>Available to pay out</p>
+                      <p style={{ color: 'var(--muted)', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>Ready to pay out</p>
                       <p style={{ color: 'var(--neon)', fontWeight: 900, fontSize: '24px' }}>${(pendingEarningsCents / 100).toFixed(2)}</p>
                     </div>
                     {stripeOnboarded ? (
-                      <>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
                         <button onClick={requestPayout} disabled={requestingPayout}
-                          style={{ background: 'rgba(0,255,136,0.12)', border: '1.5px solid rgba(0,255,136,0.35)', borderRadius: '9px', color: 'var(--neon)', fontWeight: 800, fontSize: '14px', padding: '11px 22px', cursor: requestingPayout ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', transition: 'all 0.15s' }}>
+                          style={{ background: 'rgba(0,255,136,0.12)', border: '1.5px solid rgba(0,255,136,0.35)', borderRadius: '9px', color: 'var(--neon)', fontWeight: 800, fontSize: '14px', padding: '10px 20px', cursor: requestingPayout ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                           {requestingPayout ? '⏳ Sending...' : '→ Pay Out Now'}
                         </button>
-                        {payoutMsg && (
-                          <p style={{ color: payoutMsg.startsWith('✓') ? '#00ff88' : '#ef4444', fontSize: '13px', marginTop: '8px', fontWeight: 700 }}>
-                            {payoutMsg}
-                          </p>
-                        )}
-                      </>
+                        {payoutMsg && <p style={{ color: payoutMsg.startsWith('✓') ? '#00ff88' : '#ef4444', fontSize: '13px', fontWeight: 700 }}>{payoutMsg}</p>}
+                      </div>
                     ) : (
                       <p style={{ color: '#f59e0b', fontSize: '12px', fontWeight: 600 }}>Connect a payout account below to withdraw</p>
                     )}
@@ -850,7 +797,7 @@ export default function Dashboard() {
 
                 {pendingEarningsCents === 0 && stripeOnboarded && (
                   <div style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', marginBottom: '14px' }}>
-                    <p style={{ color: 'var(--muted)', fontSize: '13px' }}>$0.00 pending — earnings will appear here as fans spend coins at your show.</p>
+                    <p style={{ color: 'var(--muted)', fontSize: '13px' }}>$0.00 pending — earnings appear here as fans spend coins.</p>
                   </div>
                 )}
 
@@ -867,7 +814,7 @@ export default function Dashboard() {
                 ) : (
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                     <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', padding: '9px 14px', flex: 1 }}>
-                      <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '13px' }}>⚠️ No payout account — earnings are accumulating but can't be transferred yet.</span>
+                      <span style={{ color: '#f59e0b', fontWeight: 700, fontSize: '13px' }}>⚠️ No payout account — earnings accumulating but can't be transferred yet.</span>
                     </div>
                     <button onClick={connectStripe} disabled={connectingStripe}
                       style={{ background: 'rgba(99,102,241,0.12)', border: '1.5px solid rgba(99,102,241,0.4)', borderRadius: '9px', color: '#818cf8', fontWeight: 700, fontSize: '13px', padding: '9px 18px', cursor: connectingStripe ? 'wait' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -878,10 +825,10 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* Payout history */}
             {payouts.length > 0 && (
               <div className="card">
-                <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Payout History</h3>
-                <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '14px' }}>Past earnings transferred to your account</p>
+                <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '12px' }}>Payout History</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {payouts.map(p => (
                     <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--surface2)', borderRadius: '8px', border: '1px solid var(--border)' }}>
@@ -896,16 +843,61 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* Vibe vote */}
             <div className="card">
-              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Your Show Link</h3>
-              <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '14px' }}>Share with fans or display alongside your QR code</p>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <div style={{ flex: 1, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '8px', padding: '10px 14px', fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {window?.location?.origin + '/show/' + profile.slug}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: genreVoteEnabled ? '14px' : 0 }}>
+                <div>
+                  <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '3px' }}>🎭 Vibe Vote</h3>
+                  <p style={{ color: 'var(--muted)', fontSize: '13px' }}>Let fans vote on which genre you play next</p>
                 </div>
-                <a href={'/show/' + profile.slug} target="_blank" rel="noreferrer" style={{ flexShrink: 0, padding: '10px 14px', background: 'var(--neon-dim)', border: '1px solid rgba(0,255,136,0.2)', borderRadius: '8px', color: 'var(--neon)', fontSize: '13px', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>Open</a>
+                <button onClick={toggleGenreVoteEnabled}
+                  style={{ padding: '8px 16px', borderRadius: '9px', border: '1.5px solid', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s', whiteSpace: 'nowrap',
+                    background: genreVoteEnabled ? 'rgba(139,92,246,0.1)' : 'var(--surface2)',
+                    borderColor: genreVoteEnabled ? 'rgba(139,92,246,0.4)' : 'var(--border)',
+                    color: genreVoteEnabled ? 'var(--purple)' : 'var(--muted)' }}>
+                  {genreVoteEnabled ? 'On' : 'Off'}
+                </button>
               </div>
+
+              {genreVoteEnabled && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
+                  <p style={{ fontSize: '12px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '10px' }}>Pick genres fans can vote on</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: voteResults.length > 0 ? '14px' : 0 }}>
+                    {GENRES.map(g => (
+                      <button key={g} onClick={() => toggleGenreOption(g)}
+                        className={'chip' + (genreVoteOptions.includes(g) ? ' active' : '')}
+                        style={{ minHeight: '30px' }}>
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                  {voteResults.length > 0 && (
+                    <div style={{ marginTop: '14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Live Results</p>
+                        <button onClick={resetVotes} disabled={resetingVotes} style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '7px', color: 'var(--muted)', fontSize: '11px', fontWeight: 600, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                          {resetingVotes ? '...' : 'Reset Votes'}
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {voteResults.map((v, i) => (
+                          <div key={v.genre}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: i === 0 ? 700 : 500, color: i === 0 ? 'var(--neon)' : 'var(--text-secondary)' }}>{i === 0 ? '🥇 ' : ''}{v.genre}</span>
+                              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{v.count} vote{v.count !== 1 ? 's' : ''} · {v.pct}%</span>
+                            </div>
+                            <div className="vote-bar-track">
+                              <div className={'vote-bar-fill' + (i === 0 ? ' leader' : '')} style={{ width: v.pct + '%' }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
           </div>
         )}
       </main>
@@ -913,6 +905,7 @@ export default function Dashboard() {
       <style>{`
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.fade-up { animation: fadeUp 0.2s ease both; }
 @media (max-width: 430px) {
   .dash-header-actions { flex-wrap: wrap; justify-content: flex-end; gap: 6px !important; }
   .dash-header-actions a { font-size: 12px !important; padding: 5px 10px !important; }
@@ -921,9 +914,8 @@ export default function Dashboard() {
   .pricing-grid { grid-template-columns: 1fr !important; }
   .queue-item-actions { flex-direction: column !important; align-items: stretch !important; gap: 4px !important; min-width: 72px; }
   .queue-item-actions button { width: 100% !important; }
-  .qr-url-display { display: block !important; text-align: left !important; }
 }
 `}</style>
     </div>
   )
-                                                                                }
+}

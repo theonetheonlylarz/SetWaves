@@ -376,7 +376,6 @@ export default function Dashboard() {
   const TABS = [
     { id: 'live', label: '🎤 Live', badge: pendingQueue.length },
     { id: 'activity', label: '📣 Activity', badge: unreadShoutouts },
-    { id: 'setlist', label: 'Setlist' },
     { id: 'setup', label: 'Setup' },
   ]
 
@@ -644,50 +643,13 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* SETLIST TAB */}
-        {tab === 'setlist' && (
-          <div className="fade-up">
-            <div className="card" style={{ marginBottom: '14px' }}>
-              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '12px' }}>Add songs fans can request. Toggle them on/off any time.</p>
-              <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <input placeholder="Song title" value={newSong.title} onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))} style={{ flex: '2 1 150px' }} />
-                <input placeholder="Artist (optional)" value={newSong.artist} onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))} style={{ flex: '2 1 110px' }} />
-                <select value={newSong.genre} onChange={e => setNewSong(p => ({ ...p, genre: e.target.value }))} style={{ flex: '1 1 100px' }}>
-                  {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-                <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0, padding: '11px 18px' }}>+ Add</button>
-              </form>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {songs.length === 0 && (
-                <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '40px 0', fontSize: '14px' }}>No songs yet. Add your first one above.</p>
-              )}
-              {songs.map(song => (
-                <div key={song.id} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s' }}>
-                  <div>
-                    <p style={{ fontWeight: 600, fontSize: '14px' }}>{song.title}</p>
-                    <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '2px' }}>
-                      {song.artist && <span>{song.artist} · </span>}
-                      <span style={{ background: 'var(--surface2)', padding: '1px 6px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '11px' }}>{song.genre || 'Other'}</span>
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                    <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '12px', padding: '5px 12px' }}>{song.active ? 'Hide' : 'Show'}</button>
-                    <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '5px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Delete</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* SETUP TAB */}
         {tab === 'setup' && (
           <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
             {/* QR + show link */}
             <div className="card" style={{ padding: '20px' }}>
-              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '14px' }}>Your Show Page</h3>
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '14px' }}>Share with Fans</h3>
               <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {qr ? (
                   <>
@@ -725,6 +687,37 @@ export default function Dashboard() {
                     {saving ? 'Saving...' : 'Save'}
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Setlist */}
+            <div className="card">
+              <h3 style={{ fontWeight: 700, fontSize: '15px', marginBottom: '4px' }}>Setlist</h3>
+              <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '12px' }}>Songs fans can request. Toggle to hide without deleting.</p>
+              <form onSubmit={addSong} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: songs.length > 0 ? '12px' : 0 }}>
+                <input placeholder="Song title" value={newSong.title} onChange={e => setNewSong(p => ({ ...p, title: e.target.value }))} style={{ flex: '2 1 150px' }} />
+                <input placeholder="Artist (optional)" value={newSong.artist} onChange={e => setNewSong(p => ({ ...p, artist: e.target.value }))} style={{ flex: '2 1 110px' }} />
+                <select value={newSong.genre} onChange={e => setNewSong(p => ({ ...p, genre: e.target.value }))} style={{ flex: '1 1 100px' }}>
+                  {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+                <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap', flexShrink: 0, padding: '11px 18px' }}>+ Add</button>
+              </form>
+              {songs.length === 0 && (
+                <p style={{ color: 'var(--muted)', fontSize: '13px', paddingTop: '8px' }}>No songs yet.</p>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {songs.map(song => (
+                  <div key={song.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', background: 'var(--surface2)', borderRadius: '8px', border: '1px solid var(--border)', opacity: song.active ? 1 : 0.4, transition: 'opacity 0.2s' }}>
+                    <div>
+                      <p style={{ fontWeight: 600, fontSize: '13px' }}>{song.title}</p>
+                      {song.artist && <p style={{ color: 'var(--muted)', fontSize: '12px', marginTop: '1px' }}>{song.artist}</p>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '5px', flexShrink: 0 }}>
+                      <button onClick={() => toggleSong(song)} className="btn-secondary" style={{ fontSize: '11px', padding: '4px 10px' }}>{song.active ? 'Hide' : 'Show'}</button>
+                      <button onClick={() => deleteSong(song.id)} style={{ background: 'rgba(255,91,91,0.1)', color: 'var(--red)', border: '1px solid rgba(255,91,91,0.15)', borderRadius: '7px', padding: '4px 10px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>✕</button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

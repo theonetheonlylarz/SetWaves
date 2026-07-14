@@ -5,6 +5,9 @@ import Dashboard from './components/Dashboard'
 import ShowPage from './components/ShowPage'
 import ForgotPassword from './components/ForgotPassword'
 import ResetPassword from './components/ResetPassword'
+import FanForgotPassword from './components/FanForgotPassword'
+import FanResetPassword from './components/FanResetPassword'
+import LandingPage from './components/LandingPage'
 import NotFound from './components/NotFound'
 
 const PrivateRoute = ({ children }) => localStorage.getItem('token') ? children : <Navigate to="/login" />
@@ -12,13 +15,15 @@ const PrivateRoute = ({ children }) => localStorage.getItem('token') ? children 
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Auth />} />
       <Route path="/signup" element={<Auth initialTab="signup" />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/fan-forgot-password" element={<FanForgotPassword />} />
+      <Route path="/fan-reset-password" element={<FanResetPassword />} />
       <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
       <Route path="/show/:slug" element={<ShowPage />} />
-      <Route path="/" element={<Navigate to="/login" />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )
